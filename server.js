@@ -539,7 +539,18 @@ async function handlePostPutDelete(req, res, method, pathname) {
   if (method === "POST" && pathname === "/api/orders") {
     const customer = await requireSession(req, "customer");
     if (!customer) return sendJson(req, res, 401, { error: "Register or sign in before ordering" });
-    const items = Array.isArray(data.items) ? data.items : [];
+    const itemMap = new Map();
+    (Array.isArray(data.items) ? data.items : []).forEach((item) => {
+      const id = Number(item.id);
+      if (!id) return;
+      const size = String(item.size || "").trim().toUpperCase();
+      const qty = Math.max(1, Number.parseInt(item.qty || 1, 10) || 1);
+      const key = `${id}::${size}`;
+      const current = itemMap.get(key) || { id, size, qty: 0 };
+      current.qty += qty;
+      itemMap.set(key, current);
+    });
+    const items = [...itemMap.values()];
     if (!items.length) return sendJson(req, res, 400, { error: "Cart is empty" });
     return withClient(async (client) => {
       await client.query("BEGIN");
@@ -547,6 +558,8 @@ async function handlePostPutDelete(req, res, method, pathname) {
         const ids = [...new Set(items.map((item) => Number(item.id)).filter(Boolean))];
         const products = await client.query("SELECT * FROM products WHERE id = ANY($1::bigint[]) FOR UPDATE", [ids]);
         const productMap = new Map(products.rows.map((product) => [String(product.id), product]));
+        const sizeState = new Map();
+        const stockState = new Map();
         let total = 0;
         const prepared = [];
         for (const item of items) {
@@ -554,18 +567,22 @@ async function handlePostPutDelete(req, res, method, pathname) {
           if (!product) continue;
           const qty = Math.max(1, Number.parseInt(item.qty || 1, 10) || 1);
           const selectedSize = String(item.size || "").trim().toUpperCase();
-          const sizes = productSizes(product);
-          const stock = productTotalStock(sizes, product.stock);
+          const sizes = sizeState.get(String(product.id)) || productSizes(product);
+          if (!sizeState.has(String(product.id))) sizeState.set(String(product.id), sizes);
+          const stock = sizes.length ? productTotalStock(sizes, product.stock) : (stockState.has(String(product.id)) ? stockState.get(String(product.id)) : productTotalStock(sizes, product.stock));
           if (!product.active || stock <= 0) throw Object.assign(new Error(`${product.name} is out of stock`), { status: 409 });
           if (sizes.length) {
             const sizeRow = sizes.find((row) => row.size === selectedSize);
             if (!selectedSize || !sizeRow || Number(sizeRow.stock || 0) <= 0) throw Object.assign(new Error(`Size ${selectedSize || "selected"} is not available for ${product.name}`), { status: 409 });
             if (qty > Number(sizeRow.stock || 0)) throw Object.assign(new Error(`Only ${sizeRow.stock} left for ${product.name} size ${selectedSize}`), { status: 409 });
+            sizeRow.stock = Math.max(0, Number(sizeRow.stock || 0) - qty);
           } else if (qty > stock) {
             throw Object.assign(new Error(`Only ${stock} left for ${product.name}`), { status: 409 });
+          } else {
+            stockState.set(String(product.id), Math.max(0, stock - qty));
           }
           total += Number(product.price) * qty;
-          prepared.push({ product, qty, selectedSize, sizes });
+          prepared.push({ product, qty, selectedSize });
         }
         const order = await client.query(
           "INSERT INTO orders (customer_id, customer_name, phone, address, status, total, created_at) VALUES ($1, $2, $3, $4, 'Processing', $5, $6) RETURNING id",
@@ -577,15 +594,18 @@ async function handlePostPutDelete(req, res, method, pathname) {
             "INSERT INTO order_items (order_id, product_id, product_name, product_image, price, requested_qty, qty, size, status) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'Processing')",
             [orderId, item.product.id, item.product.name, item.product.image, item.product.price, item.qty, item.qty, item.selectedSize]
           );
-          if (item.sizes.length) {
-            const row = item.sizes.find((size) => size.size === item.selectedSize);
-            row.stock = Math.max(0, Number(row.stock || 0) - item.qty);
-            await client.query("UPDATE products SET stock = $1, product_sizes = $2::jsonb WHERE id = $3", [productTotalStock(item.sizes), JSON.stringify(item.sizes), item.product.id]);
-          } else {
-            await client.query("UPDATE products SET stock = stock - $1 WHERE id = $2", [item.qty, item.product.id]);
-          }
-          await syncProductVisibility(client, item.product.id);
         }
+        for (const [productId, sizes] of sizeState.entries()) {
+          if (sizes.length) {
+            await client.query("UPDATE products SET stock = $1, product_sizes = $2::jsonb WHERE id = $3", [productTotalStock(sizes), JSON.stringify(sizes), productId]);
+          }
+        }
+        for (const [productId, stock] of stockState.entries()) {
+          if (!sizeState.get(productId) || !sizeState.get(productId).length) {
+            await client.query("UPDATE products SET stock = $1 WHERE id = $2", [stock, productId]);
+          }
+        }
+        for (const productId of new Set(prepared.map((item) => item.product.id))) await syncProductVisibility(client, productId);
         await client.query("COMMIT");
         return sendJson(req, res, 201, { id: orderId, total, status: "Processing" });
       } catch (error) {

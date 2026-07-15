@@ -424,6 +424,8 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   const publicProducts = (data.products || []).filter((product) => Number(product.active) === 1 && Number(product.stock || 0) > 0);
   const inactiveProducts = (data.products || []).filter((product) => Number(product.active) !== 1 || Number(product.stock || 0) <= 0);
   const currentProducts = productView === "active" ? publicProducts : inactiveProducts;
+  const formSizeRows = normalizeProductSizes(form.product_sizes);
+  const formSizeTotal = formSizeRows.reduce((sum, item) => sum + Number(item.stock || 0), 0);
   const normalizedQuery = productQuery.trim().toLowerCase();
   const visibleProducts = currentProducts.filter((product) => {
     if (!normalizedQuery) return true;
@@ -461,13 +463,14 @@ function ProductsAdmin({ data, refresh, setMessage }) {
       React.createElement("input", { required: true, value: form.name, onChange: (event) => setForm({ ...form, name: event.target.value }), placeholder: "Product name" }),
       React.createElement("select", { value: form.category_id, onChange: (event) => setForm({ ...form, category_id: event.target.value }) }, React.createElement("option", { value: "" }, "Choose category"), data.categories.map((cat) => React.createElement("option", { key: cat.id, value: cat.id }, cat.name))),
       React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.price, onChange: (event) => setForm({ ...form, price: event.target.value }), placeholder: "Price 1-10" }), React.createElement("input", { value: form.old_price || "", onChange: (event) => setForm({ ...form, old_price: event.target.value }), placeholder: "Old price" })),
-      React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.badge || "", onChange: (event) => setForm({ ...form, badge: event.target.value }), placeholder: "Badge" }), React.createElement("input", { readOnly: normalizeProductSizes(form.product_sizes).length > 0, value: normalizeProductSizes(form.product_sizes).length ? normalizeProductSizes(form.product_sizes).reduce((sum, item) => sum + Number(item.stock || 0), 0) : form.stock, onChange: (event) => setForm({ ...form, stock: event.target.value }), placeholder: "Total stock" })),
+      React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.badge || "", onChange: (event) => setForm({ ...form, badge: event.target.value }), placeholder: "Badge" }), React.createElement("input", { readOnly: formSizeRows.length > 0, value: formSizeRows.length ? formSizeTotal : form.stock, onChange: (event) => setForm({ ...form, stock: event.target.value }), placeholder: "Total stock" })),
       React.createElement("div", { className: "size-stock-builder" },
         React.createElement("div", { className: "size-stock-head" },
           React.createElement("div", null, React.createElement("strong", null, "Size Stock"), React.createElement("span", null, "Dooro size kasta iyo inta ka taalla")),
           React.createElement("button", { onClick: () => addSizeRow(), type: "button" }, "Add Size")
         ),
         React.createElement("div", { className: "quick-size-list" }, commonSizes.map((size) => React.createElement("button", { key: size, onClick: () => addSizeRow(size), type: "button" }, size))),
+        formSizeRows.length > 0 && React.createElement("p", { className: "admin-size-summary" }, `Total stock from sizes: ${formSizeTotal} (${formSizeRows.map((item) => `${item.size}: ${item.stock}`).join(" / ")})`),
         (Array.isArray(form.product_sizes) && form.product_sizes.length) ? form.product_sizes.map((item, index) => React.createElement("div", { className: "size-stock-row", key: index },
           React.createElement("select", { value: item.size || "", onChange: (event) => updateSizeRow(index, "size", event.target.value) },
             React.createElement("option", { value: "" }, "Choose size"),
@@ -925,7 +928,7 @@ function OrdersAdmin({ data, refresh, setMessage }) {
             React.createElement("img", { src: item.product_image || "assets/ai-products.png", alt: item.product_name }),
             React.createElement("div", null,
               React.createElement("strong", null, item.product_name),
-              React.createElement("span", null, `Requested ${item.requested_qty || item.qty} / Current ${item.qty} / $${Number(item.price).toFixed(2)}`)
+              React.createElement("span", null, `Size ${item.size || "No size"} / Requested ${item.requested_qty || item.qty} / Current ${item.qty} / $${Number(item.price).toFixed(2)}`)
             ),
             React.createElement("input", { max: item.requested_qty || item.qty, min: "0", onChange: (event) => updateItem(item, { qty: Number(event.target.value) }), type: "number", value: item.qty }),
             React.createElement("select", { value: item.status || "Processing", onChange: (event) => updateItem(item, { status: event.target.value }) }, ["Processing", "Approved", "Cancelled"].map((status) => React.createElement("option", { key: status }, status)))

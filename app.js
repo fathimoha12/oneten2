@@ -537,6 +537,7 @@ function ProductPage({ product, products = [], settings = {}, addToCart, navigat
   if (!currentProduct) return React.createElement(NotFoundPage, { navigate });
   const availableSizes = getProductSizes(currentProduct);
   const selectedStock = getSizeStock(currentProduct, selectedSize);
+  const totalStock = availableSizes.length ? availableSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0) : Number(currentProduct.stock || 0);
   function addSelectedToCart() {
     if (availableSizes.length && !selectedSize) {
       setMessage("Macmiil, size-kan waxba kama yaalaan. Fadlan dooro size stock leh.");
@@ -557,12 +558,12 @@ function ProductPage({ product, products = [], settings = {}, addToCart, navigat
     images.length > 1 && React.createElement("div", { className: "detail-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement("img", { src: image, alt: `${currentProduct.name} ${index + 1}`, decoding: "async", loading: "lazy" }))))
   ), React.createElement("div", { className: "detail-info" }, React.createElement("p", { className: "eyebrow" }, currentProduct.category), React.createElement("h2", null, currentProduct.name), React.createElement("p", null, currentProduct.description), React.createElement("div", { className: "price detail-price" }, React.createElement("strong", null, `$${Number(currentProduct.price).toFixed(2)}`), currentProduct.old_price && React.createElement("del", null, `$${Number(currentProduct.old_price).toFixed(2)}`)),
     availableSizes.length > 0 && React.createElement("div", { className: "size-picker" },
-      React.createElement("div", { className: "size-picker-head" }, React.createElement("strong", null, "Choose Size"), React.createElement("span", null, selectedSize ? `${selectedStock} available` : "Select a size")),
+      React.createElement("div", { className: "size-picker-head" }, React.createElement("strong", null, "Choose Size"), React.createElement("span", null, selectedSize ? `${selectedStock} available in ${selectedSize}` : "Select a size")),
       React.createElement("div", { className: "size-options" }, availableSizes.map((item) => React.createElement("button", { className: selectedSize === item.size ? "active" : "", key: item.size, onClick: () => { setSelectedSize(item.size); setQty(1); setMessage(""); }, type: "button" }, React.createElement("span", null, item.size), React.createElement("em", null, item.stock))))
     ),
     React.createElement("div", { className: "detail-buy-row" },
       React.createElement("label", null, React.createElement("span", null, "Qty"), React.createElement("input", { max: selectedStock || currentProduct.stock || 1, min: "1", onChange: (event) => setQty(Math.max(1, Number(event.target.value) || 1)), type: "number", value: qty })),
-      React.createElement("p", null, `Stock: ${availableSizes.length ? selectedStock : currentProduct.stock}`)
+      React.createElement("p", null, availableSizes.length ? `Total stock: ${totalStock} / ${selectedSize}: ${selectedStock}` : `Stock: ${totalStock}`)
     ),
     message && React.createElement("p", { className: "stock-message" }, message),
     React.createElement("button", { className: "btn primary", disabled: selectedStock <= 0, onClick: addSelectedToCart, type: "button" }, selectedStock <= 0 ? "Out of Stock" : "Add to Cart")
