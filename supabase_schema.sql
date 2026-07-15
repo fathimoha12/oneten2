@@ -120,6 +120,7 @@ insert into settings (key, value) values
   ('brand_name', 'ONE TEN'),
   ('phone', '+252 63 000 1010'),
   ('hotline', '(+252) 63 000 1010'),
+  ('whatsapp_number', '0633454984'),
   ('email', 'support@oneten.shop'),
   ('location', 'Hargaysa'),
   ('footer_text', 'Men''s fashion, clean prices, Hargaysa delivery.'),

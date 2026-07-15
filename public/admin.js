@@ -676,6 +676,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
     contact_title: settings.contact_title || "Get In Touch",
     phone: settings.phone || "",
     hotline: settings.hotline || "",
+    whatsapp_number: settings.whatsapp_number || "0633454984",
     email: settings.email || "",
     location: settings.location || "",
     information_links: cleanLinks(settings.information_links, defaultInformationLinks),
@@ -695,6 +696,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
       contact_title: settings.contact_title || "Get In Touch",
       phone: settings.phone || "",
       hotline: settings.hotline || "",
+      whatsapp_number: settings.whatsapp_number || "0633454984",
       email: settings.email || "",
       location: settings.location || "",
       information_links: cleanLinks(settings.information_links, defaultInformationLinks),
@@ -740,6 +742,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
       contact_title: form.contact_title,
       phone: form.phone,
       hotline: form.hotline,
+      whatsapp_number: form.whatsapp_number,
       email: form.email,
       location: form.location,
       information_links: form.information_links.filter((link) => link.label.trim() && link.href.trim()),
@@ -798,6 +801,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
         React.createElement("input", { value: form.phone, onChange: (event) => setForm({ ...form, phone: event.target.value }), placeholder: "Phone" }),
         React.createElement("input", { value: form.hotline, onChange: (event) => setForm({ ...form, hotline: event.target.value }), placeholder: "Hotline" })
       ),
+      React.createElement("input", { value: form.whatsapp_number, onChange: (event) => setForm({ ...form, whatsapp_number: event.target.value }), placeholder: "WhatsApp order number" }),
       React.createElement("div", { className: "two-col" },
         React.createElement("input", { value: form.email, onChange: (event) => setForm({ ...form, email: event.target.value }), placeholder: "Email" }),
         React.createElement("input", { value: form.location, onChange: (event) => setForm({ ...form, location: event.target.value }), placeholder: "Location" })

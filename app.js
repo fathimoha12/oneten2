@@ -119,6 +119,55 @@ function safeCartItems(items) {
     .filter((item) => item.id !== undefined && item.id !== null);
 }
 
+function absoluteUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || raw.startsWith("data:")) return "";
+  if (/^https?:\/\//i.test(raw)) return raw;
+  const clean = raw.replace(/^\/+/, "");
+  return `${window.location.origin}/${clean}`;
+}
+
+function productPublicLink(item) {
+  return `${window.location.origin}/#/product/${item.id}`;
+}
+
+function normalizeWhatsAppNumber(value) {
+  const digits = String(value || "").replace(/\D/g, "");
+  if (!digits) return "252633454984";
+  if (digits.startsWith("00")) return digits.slice(2);
+  if (digits.startsWith("0")) return `252${digits.slice(1)}`;
+  if (digits.length === 9 && digits.startsWith("63")) return `252${digits}`;
+  return digits;
+}
+
+function buildWhatsAppOrderUrl({ order, cart, customer, form, total, settings = {} }) {
+  const businessNumber = normalizeWhatsAppNumber(settings.whatsapp_number || settings.whatsapp || "0633454984");
+  const lines = [
+    "ONE TEN ORDER",
+    `Order: #${order && order.id ? order.id : "New"}`,
+    `Customer: ${customer && customer.name ? customer.name : "Customer"}`,
+    `Phone: ${form.phone || ""}`,
+    form.address ? `Address: ${form.address}` : "",
+    "",
+    "Products:",
+  ].filter(Boolean);
+
+  cart.forEach((item, index) => {
+    const imageLink = absoluteUrl(item.image) || productPublicLink(item);
+    lines.push(
+      `${index + 1}. ${item.name}`,
+      `   Image: ${imageLink}`,
+      `   Price: $${Number(item.price || 0).toFixed(2)}`,
+      `   Qty: ${item.qty}`,
+      `   Size: ${item.size || "No size"}`,
+      `   Line Total: $${(Number(item.price || 0) * Number(item.qty || 1)).toFixed(2)}`
+    );
+  });
+
+  lines.push("", `Total: $${Number(total || 0).toFixed(2)}`, "Status: New checkout order");
+  return `https://wa.me/${businessNumber}?text=${encodeURIComponent(lines.join("\n"))}`;
+}
+
 function loadCart() {
   try {
     return safeCartItems(JSON.parse(localStorage.getItem("oneTenCart") || "[]"));
@@ -246,7 +295,7 @@ function App() {
     route.page === "about" && React.createElement(AboutPage, { settings }),
     route.page === "contact" && React.createElement(ContactPage, { settings }),
     route.page === "cart" && React.createElement(CartPage, { cart: cartProducts, setCart, total, navigate }),
-    route.page === "checkout" && React.createElement(CheckoutPage, { cart: cartProducts, total, customer, setCart, navigate }),
+    route.page === "checkout" && React.createElement(CheckoutPage, { cart: cartProducts, total, customer, setCart, navigate, settings }),
     route.page === "order-history" && React.createElement(OrderHistoryPage, { customer, navigate }),
     route.page === "profile" && React.createElement(ProfilePage, { customer, navigate, logout }),
     route.page === "signin" && (customer ? React.createElement(ProfilePage, { customer, navigate, logout }) : React.createElement(AuthPage, { mode: "signin", setCustomer, navigate })),
@@ -597,7 +646,7 @@ function CartPage({ cart, setCart, total, navigate }) {
   );
 }
 
-function CheckoutPage({ cart, total, customer, setCart, navigate }) {
+function CheckoutPage({ cart, total, customer, setCart, navigate, settings }) {
   const [form, setForm] = useState({ phone: "", address: "" });
   const [message, setMessage] = useState("");
 
@@ -617,12 +666,22 @@ function CheckoutPage({ cart, total, customer, setCart, navigate }) {
       setMessage(available > 0 ? `Kaliya ${available} ayaa ka yaalla ${invalidItem.name}${invalidItem.size ? ` size ${invalidItem.size}` : ""}.` : `${invalidItem.name}${invalidItem.size ? ` size ${invalidItem.size}` : ""} stock kama yaallo hadda.`);
       return;
     }
+    const whatsappWindow = window.open("about:blank", "_blank");
+    if (whatsappWindow) {
+      whatsappWindow.document.write("<p style='font-family:sans-serif'>Preparing ONE TEN WhatsApp order...</p>");
+    }
     api("/api/orders", { method: "POST", body: JSON.stringify({ ...form, items: cart.map((item) => ({ id: item.id, size: item.size || "", qty: item.qty })) }) })
       .then((order) => {
+        const whatsappUrl = buildWhatsAppOrderUrl({ order, cart, customer, form, total, settings });
         setCart([]);
-        setMessage(`Order #${order.id} received`);
+        setMessage(`Order #${order.id} received. WhatsApp order message is opening.`);
+        if (whatsappWindow) whatsappWindow.location.href = whatsappUrl;
+        else window.location.href = whatsappUrl;
       })
-      .catch((error) => setMessage(error.message));
+      .catch((error) => {
+        if (whatsappWindow) whatsappWindow.close();
+        setMessage(error.message);
+      });
   }
 
   return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: "Checkout" }), React.createElement("section", { className: "content-page checkout-grid" }, React.createElement("form", { className: "form-card", onSubmit: submit }, React.createElement("h2", null, "Billing Details"), message && React.createElement("p", { className: "form-message" }, message), React.createElement("input", { disabled: true, value: customer.name }), React.createElement("input", { placeholder: "Phone number", required: true, value: form.phone, onChange: (event) => setForm({ ...form, phone: event.target.value }) }), React.createElement("textarea", { placeholder: "Delivery address", value: form.address, onChange: (event) => setForm({ ...form, address: event.target.value }) }), React.createElement("button", { disabled: cart.length === 0, type: "submit" }, "Place Order")), React.createElement("aside", { className: "summary checkout-summary" }, React.createElement("h3", null, "Order Summary"), React.createElement("div", { className: "checkout-products-grid" }, cart.map((item) => React.createElement("div", { className: "checkout-product-mini", key: cartKey(item) }, React.createElement("img", { src: item.image, alt: item.name }), React.createElement("span", null, item.size ? `${item.name} / ${item.size}` : item.name), React.createElement("strong", null, `x${item.qty}`)))), React.createElement("p", null, `${cart.length} product lines`), React.createElement("strong", null, `$${total.toFixed(2)}`), React.createElement("button", { className: "btn ghost", onClick: () => navigate("cart") }, "Back to cart"))));
