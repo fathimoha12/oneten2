@@ -371,11 +371,20 @@ function sendJson(req, res, status, payload) {
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let body = "";
+    let tooLarge = false;
     req.on("data", (chunk) => {
+      if (tooLarge) return;
       body += chunk;
-      if (body.length > 18_000_000) reject(new Error("Payload too large"));
+      if (body.length > 18_000_000) {
+        tooLarge = true;
+        const error = new Error("Payload too large");
+        error.status = 413;
+        reject(error);
+        req.destroy();
+      }
     });
     req.on("end", () => {
+      if (tooLarge) return;
       if (!body) return resolve({});
       try {
         resolve(JSON.parse(body));

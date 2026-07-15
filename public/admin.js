@@ -13,6 +13,9 @@ function adminApi(path, options = {}) {
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...(options.headers || {}),
   };
+  if (typeof options.body === "string" && options.body.length > 4_000_000) {
+    return Promise.reject(new Error("Upload is too large. Use fewer images or smaller photos, then try again."));
+  }
 
   if (typeof fetch === "function") {
     return fetch(apiUrl(path), { ...options, headers }).then(async (response) => {
@@ -57,12 +60,41 @@ function getProductImages(product) {
   return clean.length ? clean : ["assets/ai-products.png"];
 }
 
-function readImageFiles(files) {
-  return Promise.all(Array.from(files || []).map((file) => new Promise((resolve) => {
+function readImageFiles(files, options = {}) {
+  const maxSize = options.maxSize || 1000;
+  const quality = options.quality || 0.72;
+  return Promise.all(Array.from(files || []).map((file) => resizeImageFile(file, maxSize, quality)));
+}
+
+function resizeImageFile(file, maxSize, quality) {
+  return new Promise((resolve) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
+    reader.onload = () => {
+      const original = reader.result;
+      if (!file.type.startsWith("image/") || file.size < 450_000) {
+        resolve(original);
+        return;
+      }
+      const image = new Image();
+      image.onload = () => {
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const context = canvas.getContext("2d");
+        context.fillStyle = "#ffffff";
+        context.fillRect(0, 0, width, height);
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      image.onerror = () => resolve(original);
+      image.src = original;
+    };
+    reader.onerror = () => resolve("");
     reader.readAsDataURL(file);
-  })));
+  });
 }
 
 const defaultInformationLinks = [
@@ -316,14 +348,17 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   }
 
   function chooseFile(event) {
-    readImageFiles(event.target.files).then((uploaded) => {
+    const selected = Array.from(event.target.files || []).slice(0, 5);
+    if ((event.target.files || []).length > 5) setMessage("Only the first 5 product images were added to keep upload fast");
+    readImageFiles(selected, { maxSize: 900, quality: 0.7 }).then((uploaded) => {
       if (!uploaded.length) return;
       setForm((current) => {
         const base = Array.isArray(current.images) && current.images.length ? getProductImages(current) : (current.image && current.image !== "assets/ai-products.png" ? [current.image] : []);
-        const images = [...base, ...uploaded].filter(Boolean);
+        const images = [...base, ...uploaded].filter(Boolean).slice(0, 5);
         const clean = images.filter((image, index) => images.indexOf(image) === index);
         return { ...current, image: clean[0], images: clean, crop: "center" };
       });
+      event.target.value = "";
     });
   }
 
@@ -525,9 +560,10 @@ function AdsAdmin({ data, refresh, setMessage }) {
   function chooseFile(event) {
     const file = event.target.files && event.target.files[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => setForm({ ...form, image: reader.result });
-    reader.readAsDataURL(file);
+    readImageFiles([file], { maxSize: 1200, quality: 0.72 }).then((images) => {
+      if (images[0]) setForm({ ...form, image: images[0] });
+      event.target.value = "";
+    });
   }
 
   function save(event) {
@@ -588,8 +624,9 @@ function AboutAdmin({ data, refresh, setMessage }) {
   }, [JSON.stringify(settings)]);
 
   function chooseImage(event) {
-    readImageFiles(event.target.files).then((images) => {
+    readImageFiles(event.target.files, { maxSize: 1200, quality: 0.72 }).then((images) => {
       if (images[0]) setForm((current) => ({ ...current, about_image: images[0] }));
+      event.target.value = "";
     });
   }
 
@@ -684,8 +721,9 @@ function SettingsAdmin({ data, refresh, setMessage }) {
   }
 
   function chooseLogo(field, event) {
-    readImageFiles(event.target.files).then((images) => {
+    readImageFiles(event.target.files, { maxSize: 900, quality: 0.75 }).then((images) => {
       if (images[0]) setForm((current) => ({ ...current, [field]: images[0] }));
+      event.target.value = "";
     });
   }
 
