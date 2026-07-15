@@ -16,9 +16,26 @@ if (!DATABASE_URL.trim()) {
   console.warn("DATABASE_URL is missing. Add your Supabase/Postgres connection string on Render.");
 }
 
+function normalizeDatabaseUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    ["sslmode", "sslcert", "sslkey", "sslrootcert"].forEach((key) => parsed.searchParams.delete(key));
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
+}
+
+const DB_CONNECTION_STRING = normalizeDatabaseUrl(DATABASE_URL);
+const DB_SSL = DB_CONNECTION_STRING && process.env.PGSSL !== "false"
+  ? { rejectUnauthorized: false }
+  : undefined;
+
 const pool = new Pool({
-  connectionString: DATABASE_URL,
-  ssl: DATABASE_URL.trim() && process.env.PGSSL !== "false" ? { rejectUnauthorized: false } : undefined,
+  connectionString: DB_CONNECTION_STRING,
+  ssl: DB_SSL,
   max: Number(process.env.PG_POOL_MAX || 6),
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 15000,
