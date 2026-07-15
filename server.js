@@ -468,6 +468,7 @@ async function handleGet(req, res, pathname) {
       payload.products = products.rows.map(adminProductRecord);
       payload.orders = orders.rows.map((order) => ({ ...order, order_items: byOrder.get(String(order.id)) || [] }));
       payload.subscribers = subscribers.rows;
+      payload.admin = { id: admin.id, username: admin.username, created_at: admin.created_at };
       payload.dashboard = {
         products: payload.products.length,
         categories: payload.categories.length,
@@ -592,6 +593,30 @@ async function handlePostPutDelete(req, res, method, pathname) {
 
   const admin = pathname.startsWith("/api/admin/") ? await requireSession(req, "admin") : null;
   if (pathname.startsWith("/api/admin/") && !admin) return sendJson(req, res, 401, { error: "Admin login required" });
+
+  if (pathname === "/api/admin/profile" && method === "PUT") {
+    const nextUsername = String(data.username || "").trim();
+    const currentPassword = String(data.current_password || "");
+    const nextPassword = String(data.new_password || "");
+    const currentToken = getAuthToken(req);
+
+    if (nextUsername.length < 3) return sendJson(req, res, 400, { error: "Username must be at least 3 characters" });
+    if (!currentPassword) return sendJson(req, res, 400, { error: "Current password is required" });
+    if (hashPassword(currentPassword) !== admin.password_hash) return sendJson(req, res, 403, { error: "Current password is wrong" });
+    if (nextPassword && nextPassword.length < 6) return sendJson(req, res, 400, { error: "New password must be at least 6 characters" });
+
+    const duplicate = await query("SELECT id FROM admin_users WHERE username = $1 AND id <> $2", [nextUsername, admin.id]);
+    if (duplicate.rows[0]) return sendJson(req, res, 409, { error: "This username is already used" });
+
+    await query(
+      "UPDATE admin_users SET username = $1, password_hash = $2 WHERE id = $3",
+      [nextUsername, nextPassword ? hashPassword(nextPassword) : admin.password_hash, admin.id]
+    );
+    if (nextPassword) {
+      await query("DELETE FROM sessions WHERE user_type = 'admin' AND user_id = $1 AND token <> $2", [admin.id, currentToken]);
+    }
+    return sendJson(req, res, 200, { ok: true, admin: { id: admin.id, username: nextUsername } });
+  }
 
   if (pathname === "/api/admin/categories" && method === "POST") {
     await query("INSERT INTO categories (name, description, price_mode, sort_order, created_at) VALUES ($1, $2, $3, $4, $5)", [data.name || "Category", data.description || "", data.price_mode || "range", Number.parseInt(data.sort_order || 0, 10) || 0, now()]);

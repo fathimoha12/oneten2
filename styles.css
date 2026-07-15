@@ -906,6 +906,19 @@ img {
   gap: 14px;
 }
 
+.settings-grid {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+}
+
+.muted {
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0;
+}
+
 .two-col {
   display: grid;
   gap: 12px;
@@ -4195,7 +4208,8 @@ img {
   }
 
   .dashboard-panels,
-  .products-workspace {
+  .products-workspace,
+  .settings-grid {
     grid-template-columns: 1fr;
   }
 

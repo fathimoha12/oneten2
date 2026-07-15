@@ -126,10 +126,10 @@ const emptyAd = {
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
   const [username, setUsername] = useState("onetenadmin");
-  const [password, setPassword] = useState("oneten");
+  const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState("dashboard");
-  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], subscribers: [], dashboard: {}, settings: {} });
+  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], subscribers: [], dashboard: {}, settings: {}, admin: {} });
 
   useEffect(() => {
     if (token) refresh();
@@ -171,7 +171,7 @@ function AdminApp() {
       React.createElement("form", { className: "admin-login-card", onSubmit: login },
         React.createElement("img", { src: data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
         React.createElement("h1", null, "Admin Login"),
-        React.createElement("p", null, "Username: onetenadmin / Password: oneten"),
+        React.createElement("p", null, "Enter your private admin credentials."),
         message && React.createElement("div", { className: "admin-message" }, message),
         React.createElement("input", { value: username, onChange: (event) => setUsername(event.target.value), placeholder: "Username" }),
         React.createElement("input", { value: password, onChange: (event) => setPassword(event.target.value), placeholder: "Password", type: "password" }),
@@ -184,7 +184,7 @@ function AdminApp() {
   return React.createElement("div", { className: "admin-shell" },
     React.createElement("aside", { className: "admin-sidebar" },
       React.createElement("img", { src: data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png", alt: "ONE TEN" }),
-      [["dashboard", "Dashboard"], ["products", "Products"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["subscribers", "Subscribers"], ["orders", "Orders"]].map(([id, label]) =>
+      [["dashboard", "Dashboard"], ["products", "Products"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["subscribers", "Subscribers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
         React.createElement("button", { className: tab === id ? "active" : "", key: id, onClick: () => setTab(id), type: "button" }, label)
       ),
       React.createElement("a", { href: "/" }, "Public Website"),
@@ -213,7 +213,8 @@ function AdminApp() {
       tab === "about" && React.createElement(AboutAdmin, { data, refresh, setMessage }),
       tab === "settings" && React.createElement(SettingsAdmin, { data, refresh, setMessage }),
       tab === "subscribers" && React.createElement(SubscribersAdmin, { data }),
-      tab === "orders" && React.createElement(OrdersAdmin, { data, refresh, setMessage })
+      tab === "orders" && React.createElement(OrdersAdmin, { data, refresh, setMessage }),
+      tab === "security" && React.createElement(SecurityAdmin, { data, refresh, setMessage })
     )
   );
 }
@@ -776,6 +777,64 @@ function SettingsAdmin({ data, refresh, setMessage }) {
       React.createElement("p", null, `Hotline: ${form.hotline}`),
       React.createElement("p", null, form.email),
       React.createElement("p", null, form.location)
+    )
+  );
+}
+
+function SecurityAdmin({ data, refresh, setMessage }) {
+  const admin = data.admin || {};
+  const [form, setForm] = useState({
+    username: admin.username || "onetenadmin",
+    current_password: "",
+    new_password: "",
+    confirm_password: "",
+  });
+
+  useEffect(() => {
+    setForm((current) => ({ ...current, username: admin.username || current.username || "onetenadmin" }));
+  }, [admin.username]);
+
+  function save(event) {
+    event.preventDefault();
+    if (form.new_password && form.new_password !== form.confirm_password) {
+      setMessage("New password and confirmation do not match");
+      return;
+    }
+    adminApi("/api/admin/profile", {
+      method: "PUT",
+      body: JSON.stringify({
+        username: form.username,
+        current_password: form.current_password,
+        new_password: form.new_password,
+      }),
+    })
+      .then(() => {
+        setMessage("Admin security details updated");
+        setForm((current) => ({ ...current, current_password: "", new_password: "", confirm_password: "" }));
+        refresh();
+      })
+      .catch((error) => setMessage(error.message));
+  }
+
+  return React.createElement("section", { className: "settings-grid" },
+    React.createElement("form", { className: "admin-form security-form", onSubmit: save },
+      React.createElement("h2", null, "Admin Security"),
+      React.createElement("p", { className: "muted" }, "Change the private admin username or password. The current password is required before saving."),
+      React.createElement("input", { value: form.username, onChange: (event) => setForm({ ...form, username: event.target.value }), placeholder: "Admin username" }),
+      React.createElement("input", { value: form.current_password, onChange: (event) => setForm({ ...form, current_password: event.target.value }), placeholder: "Current password", type: "password", autoComplete: "current-password" }),
+      React.createElement("input", { value: form.new_password, onChange: (event) => setForm({ ...form, new_password: event.target.value }), placeholder: "New password (optional)", type: "password", autoComplete: "new-password" }),
+      React.createElement("input", { value: form.confirm_password, onChange: (event) => setForm({ ...form, confirm_password: event.target.value }), placeholder: "Confirm new password", type: "password", autoComplete: "new-password" }),
+      React.createElement("button", { type: "submit" }, "Save Security")
+    ),
+    React.createElement("div", { className: "admin-table" },
+      React.createElement("h2", null, "Current Admin"),
+      React.createElement("article", { className: "order-row" },
+        React.createElement("div", null,
+          React.createElement("strong", null, admin.username || form.username || "Admin"),
+          React.createElement("span", null, "Active dashboard account")
+        )
+      ),
+      React.createElement("p", { className: "muted" }, "When the password is changed, other open admin sessions are signed out automatically.")
     )
   );
 }

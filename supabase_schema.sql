@@ -113,7 +113,7 @@ create index if not exists idx_orders_customer on orders(customer_id);
 create index if not exists idx_order_items_order on order_items(order_id);
 
 insert into admin_users (username, password_hash, created_at)
-values ('onetenadmin', '2767c6098cbe69c32d1c7112b51d036987b00c8770881e7a591b9b5734a30f7d', now()::text)
+values ('onetenadmin', '35b744a8fe1df824c128bffc20a7097ce25b65ae34da5442e1268f70b697b79a', now()::text)
 on conflict (username) do nothing;
 
 insert into settings (key, value) values
