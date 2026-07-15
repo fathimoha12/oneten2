@@ -192,13 +192,20 @@ async function withClient(callback) {
 async function initDb() {
   if (!DATABASE_URL.trim()) return;
   if (process.env.INIT_DB_ON_START !== "1") {
-    await query("SELECT 1");
+    await ensureRuntimeSchema();
     return;
   }
   const schemaPath = path.join(ROOT, "supabase_schema.sql");
   if (fs.existsSync(schemaPath)) {
     await query(fs.readFileSync(schemaPath, "utf8"));
   }
+  await ensureRuntimeSchema();
+}
+
+async function ensureRuntimeSchema() {
+  await query("SELECT 1");
+  await query("ALTER TABLE products ADD COLUMN IF NOT EXISTS product_sizes jsonb DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS size text DEFAULT ''");
 }
 
 async function requireSession(req, userType) {
