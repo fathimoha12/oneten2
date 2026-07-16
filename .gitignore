@@ -1,5 +1,8 @@
 __pycache__/
 *.pyc
 .env
+.env.local
+.next/
+node_modules/
 oneten.sqlite3
 supabase_full_export.sql

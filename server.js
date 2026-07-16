@@ -11,6 +11,9 @@ const HOST = process.env.HOST || "0.0.0.0";
 const DATABASE_URL = process.env.DATABASE_URL || process.env.SUPABASE_DB_URL || "";
 const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || "*";
 const SECRET_SETTING_KEYS = new Set(["openai_api_key"]);
+const RATE_LIMIT_WINDOW_MS = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const RATE_LIMIT_MAX = Number(process.env.RATE_LIMIT_MAX || 140);
+const rateBuckets = new Map();
 
 if (!DATABASE_URL.trim()) {
   console.warn("DATABASE_URL is missing. Add your Supabase/Postgres connection string on Render.");
@@ -170,9 +173,72 @@ function normalizePhone(phone) {
   return String(phone || "").replace(/[^\d+]/g, "").trim();
 }
 
+function parseCookies(req) {
+  return String(req.headers.cookie || "")
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const index = part.indexOf("=");
+      if (index === -1) return cookies;
+      cookies[decodeURIComponent(part.slice(0, index))] = decodeURIComponent(part.slice(index + 1));
+      return cookies;
+    }, {});
+}
+
 function getAuthToken(req) {
   const auth = req.headers.authorization || "";
-  return auth.startsWith("Bearer ") ? auth.replace("Bearer ", "").trim() : "";
+  if (auth.startsWith("Bearer ")) return auth.replace("Bearer ", "").trim();
+  const cookies = parseCookies(req);
+  return cookies.customerToken || cookies.adminToken || "";
+}
+
+function sessionCookie(name, value) {
+  const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
+  return `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=604800; HttpOnly; SameSite=Lax${secure}`;
+}
+
+function clientIp(req) {
+  return String(req.headers["x-forwarded-for"] || req.socket.remoteAddress || "local").split(",")[0].trim();
+}
+
+function rateLimitError(req, pathname) {
+  if (req.method === "OPTIONS" || pathname === "/api/health") return null;
+  const nowMs = Date.now();
+  const bucketKey = `${clientIp(req)}:${pathname}`;
+  const current = rateBuckets.get(bucketKey) || { count: 0, resetAt: nowMs + RATE_LIMIT_WINDOW_MS };
+  if (nowMs > current.resetAt) {
+    current.count = 0;
+    current.resetAt = nowMs + RATE_LIMIT_WINDOW_MS;
+  }
+  current.count += 1;
+  rateBuckets.set(bucketKey, current);
+  if (rateBuckets.size > 5000) {
+    for (const [key, bucket] of rateBuckets.entries()) {
+      if (nowMs > bucket.resetAt) rateBuckets.delete(key);
+    }
+  }
+  return current.count > RATE_LIMIT_MAX ? { status: 429, error: "Too many requests. Please try again shortly." } : null;
+}
+
+function originError(req) {
+  if (!["POST", "PUT", "DELETE"].includes(req.method)) return null;
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  const host = String(req.headers["x-forwarded-host"] || req.headers.host || "");
+  try {
+    return new URL(origin).host === host ? null : { status: 403, error: "Request origin is not allowed" };
+  } catch {
+    return { status: 403, error: "Request origin is not allowed" };
+  }
+}
+
+function cleanText(value, max = 240) {
+  return String(value || "").replace(/[<>]/g, "").trim().slice(0, max);
+}
+
+function cleanEmail(value) {
+  return cleanText(value, 180).toLowerCase();
 }
 
 async function query(sql, params = []) {
@@ -359,9 +425,12 @@ function friendlyAiError(errorText) {
   }
 }
 
-function sendJson(req, res, status, payload) {
+function sendJson(req, res, status, payload, extraHeaders = {}) {
   let body = Buffer.from(JSON.stringify(payload), "utf8");
-  const useGzip = (req.headers["accept-encoding"] || "").includes("gzip") && body.length > 1024;
+  const acceptEncoding = req.headers["accept-encoding"] || "";
+  const useBrotli = acceptEncoding.includes("br") && body.length > 1024;
+  const useGzip = !useBrotli && acceptEncoding.includes("gzip") && body.length > 1024;
+  if (useBrotli) body = zlib.brotliCompressSync(body);
   if (useGzip) body = zlib.gzipSync(body);
   res.writeHead(status, {
     "Content-Type": "application/json; charset=utf-8",
@@ -369,7 +438,9 @@ function sendJson(req, res, status, payload) {
     "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
     "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
+    ...(useBrotli ? { "Content-Encoding": "br", Vary: "Accept-Encoding" } : {}),
     ...(useGzip ? { "Content-Encoding": "gzip", Vary: "Accept-Encoding" } : {}),
+    ...extraHeaders,
     "Content-Length": body.length,
   });
   res.end(body);
@@ -422,8 +493,9 @@ async function handleGet(req, res, pathname) {
       error: databaseStartupError,
     });
   }
-  if (pathname === "/api/public/bootstrap") return sendJson(req, res, 200, await publicPayload(false));
-  if (pathname === "/api/public/products") return sendJson(req, res, 200, { products: await publicProducts() });
+  const publicCacheHeaders = { "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300" };
+  if (pathname === "/api/public/bootstrap") return sendJson(req, res, 200, await publicPayload(false), publicCacheHeaders);
+  if (pathname === "/api/public/products") return sendJson(req, res, 200, { products: await publicProducts() }, publicCacheHeaders);
 
   const publicProductMatch = pathname.match(/^\/api\/public\/products\/(\d+)$/);
   if (publicProductMatch) {
@@ -435,7 +507,7 @@ async function handleGet(req, res, pathname) {
       [Number(publicProductMatch[1])]
     );
     const product = publicProductRecord(result.rows[0], true);
-    return product ? sendJson(req, res, 200, { product }) : sendJson(req, res, 404, { error: "Product not found" });
+    return product ? sendJson(req, res, 200, { product }, publicCacheHeaders) : sendJson(req, res, 404, { error: "Product not found" });
   }
 
   if (pathname === "/api/customer/me") {
@@ -506,14 +578,18 @@ async function handlePostPutDelete(req, res, method, pathname) {
 
   if (method === "POST" && pathname === "/api/customer/register") {
     try {
+      const email = cleanEmail(data.email);
+      const name = cleanText(data.name || "Customer", 120) || "Customer";
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return sendJson(req, res, 400, { error: "Valid email is required" });
+      if (String(data.password || "").length < 4) return sendJson(req, res, 400, { error: "Password is too short" });
       const inserted = await query(
         "INSERT INTO customers (name, email, password_hash, created_at) VALUES ($1, $2, $3, $4) RETURNING id",
-        [data.name || "Customer", String(data.email || "").toLowerCase(), hashPassword(data.password), now()]
+        [name, email, hashPassword(data.password), now()]
       );
       const customerId = inserted.rows[0].id;
       const authToken = token();
       await query("INSERT INTO sessions (token, user_type, user_id, created_at) VALUES ($1, 'customer', $2, $3)", [authToken, customerId, now()]);
-      return sendJson(req, res, 201, { token: authToken, user: { id: customerId, name: data.name || "Customer", email: String(data.email || "").toLowerCase() } });
+      return sendJson(req, res, 201, { token: authToken, user: { id: customerId, name, email } }, { "Set-Cookie": sessionCookie("customerToken", authToken) });
     } catch (error) {
       if (error.code === "23505") return sendJson(req, res, 409, { error: "Email already exists" });
       throw error;
@@ -521,19 +597,19 @@ async function handlePostPutDelete(req, res, method, pathname) {
   }
 
   if (method === "POST" && pathname === "/api/customer/login") {
-    const user = await query("SELECT * FROM customers WHERE email = $1 AND password_hash = $2", [String(data.email || "").toLowerCase(), hashPassword(data.password)]);
+    const user = await query("SELECT * FROM customers WHERE email = $1 AND password_hash = $2", [cleanEmail(data.email), hashPassword(data.password)]);
     if (!user.rows[0]) return sendJson(req, res, 401, { error: "Wrong email or password" });
     const authToken = token();
     await query("INSERT INTO sessions (token, user_type, user_id, created_at) VALUES ($1, 'customer', $2, $3)", [authToken, user.rows[0].id, now()]);
-    return sendJson(req, res, 200, { token: authToken, user: { id: user.rows[0].id, name: user.rows[0].name, email: user.rows[0].email } });
+    return sendJson(req, res, 200, { token: authToken, user: { id: user.rows[0].id, name: user.rows[0].name, email: user.rows[0].email } }, { "Set-Cookie": sessionCookie("customerToken", authToken) });
   }
 
   if (method === "POST" && pathname === "/api/admin/login") {
-    const user = await query("SELECT * FROM admin_users WHERE username = $1 AND password_hash = $2", [data.username || "", hashPassword(data.password)]);
+    const user = await query("SELECT * FROM admin_users WHERE username = $1 AND password_hash = $2", [cleanText(data.username, 80), hashPassword(data.password)]);
     if (!user.rows[0]) return sendJson(req, res, 401, { error: "Wrong admin username or password" });
     const authToken = token();
     await query("INSERT INTO sessions (token, user_type, user_id, created_at) VALUES ($1, 'admin', $2, $3)", [authToken, user.rows[0].id, now()]);
-    return sendJson(req, res, 200, { token: authToken, admin: { id: user.rows[0].id, username: user.rows[0].username } });
+    return sendJson(req, res, 200, { token: authToken, admin: { id: user.rows[0].id, username: user.rows[0].username } }, { "Set-Cookie": sessionCookie("adminToken", authToken) });
   }
 
   if (method === "POST" && pathname === "/api/orders") {
@@ -883,6 +959,10 @@ async function handleRequest(req, res) {
     if (req.method === "OPTIONS") return cors(res);
     if (pathname.startsWith("/api/")) {
       if (!DATABASE_URL.trim()) return sendJson(req, res, 500, { error: "DATABASE_URL is missing on the backend host" });
+      const limited = rateLimitError(req, pathname);
+      if (limited) return sendJson(req, res, limited.status, { error: limited.error });
+      const badOrigin = originError(req);
+      if (badOrigin) return sendJson(req, res, badOrigin.status, { error: badOrigin.error });
       if (req.method === "GET") return await handleGet(req, res, pathname);
       if (["POST", "PUT", "DELETE"].includes(req.method)) return await handlePostPutDelete(req, res, req.method, pathname);
       return sendJson(req, res, 405, { error: "Method not allowed" });

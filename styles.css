@@ -4433,6 +4433,29 @@ img {
   margin-top: 34px;
 }
 
+.install-prompt {
+  position: fixed;
+  right: 18px;
+  bottom: 92px;
+  z-index: 80;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #f20d14;
+  color: #fff;
+  font-weight: 900;
+  box-shadow: 0 16px 42px rgba(242, 13, 20, 0.3);
+}
+
+.install-prompt .icon {
+  width: 18px;
+  height: 18px;
+}
+
 @media (min-width: 901px) {
   .related-products {
     margin-left: auto;

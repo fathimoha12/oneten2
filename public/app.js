@@ -107,10 +107,20 @@ function Icon({ name }) {
   );
 }
 
-function routeFromHash() {
-  const raw = window.location.hash.replace(/^#\/?/, "");
-  const [page = "home", id] = raw.split("/");
+function normalizeRoute(raw) {
+  const clean = String(raw || "").replace(/^#\/?/, "").replace(/^\/+/, "").replace(/\/+$/, "");
+  const [page = "home", id] = clean.split("/");
   return { page: page || "home", id };
+}
+
+function routeFromLocation() {
+  if (window.location.hash) return normalizeRoute(window.location.hash);
+  return normalizeRoute(window.location.pathname === "/" ? "home" : window.location.pathname);
+}
+
+function routePath(page) {
+  const clean = String(page || "home").replace(/^\/+/, "");
+  return clean === "home" ? "/" : `/${clean}`;
 }
 
 function safeCartItems(items) {
@@ -128,7 +138,7 @@ function absoluteUrl(value) {
 }
 
 function productPublicLink(item) {
-  return `${window.location.origin}/#/product/${item.id}`;
+  return `${window.location.origin}/product/${item.id}`;
 }
 
 function normalizeWhatsAppNumber(value) {
@@ -178,7 +188,7 @@ function loadCart() {
 }
 
 function App() {
-  const [route, setRoute] = useState(routeFromHash);
+  const [route, setRoute] = useState(routeFromLocation);
   const [theme, setTheme] = useState(localStorage.getItem("oneTenTheme") || "day");
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -188,11 +198,33 @@ function App() {
   const [customer, setCustomer] = useState(null);
   const [cart, setCart] = useState(loadCart);
   const [notice, setNotice] = useState("");
+  const [installPrompt, setInstallPrompt] = useState(null);
 
   useEffect(() => {
-    const onHash = () => setRoute(routeFromHash());
-    window.addEventListener("hashchange", onHash);
-    return () => window.removeEventListener("hashchange", onHash);
+    const onRoute = () => setRoute(routeFromLocation());
+    window.addEventListener("hashchange", onRoute);
+    window.addEventListener("popstate", onRoute);
+    return () => {
+      window.removeEventListener("hashchange", onRoute);
+      window.removeEventListener("popstate", onRoute);
+    };
+  }, []);
+
+  useEffect(() => {
+    if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    }
+    const onBeforeInstall = (event) => {
+      event.preventDefault();
+      setInstallPrompt(event);
+    };
+    const onInstalled = () => setInstallPrompt(null);
+    window.addEventListener("beforeinstallprompt", onBeforeInstall);
+    window.addEventListener("appinstalled", onInstalled);
+    return () => {
+      window.removeEventListener("beforeinstallprompt", onBeforeInstall);
+      window.removeEventListener("appinstalled", onInstalled);
+    };
   }, []);
 
   useEffect(() => {
@@ -235,7 +267,17 @@ function App() {
   }
 
   function navigate(page) {
-    window.location.hash = `#/${page}`;
+    const nextPath = routePath(page);
+    if (window.location.pathname !== nextPath || window.location.hash) {
+      window.history.pushState({}, "", nextPath);
+    }
+    setRoute(routeFromLocation());
+  }
+
+  function installApp() {
+    if (!installPrompt) return;
+    installPrompt.prompt();
+    installPrompt.userChoice.finally(() => setInstallPrompt(null));
   }
 
   function addToCart(product, size = "", qty = 1) {
@@ -301,6 +343,7 @@ function App() {
     route.page === "signin" && (customer ? React.createElement(ProfilePage, { customer, navigate, logout }) : React.createElement(AuthPage, { mode: "signin", setCustomer, navigate })),
     route.page === "register" && React.createElement(AuthPage, { mode: "register", setCustomer, navigate }),
     !["home", "shop", "product", "about", "contact", "cart", "checkout", "order-history", "profile", "signin", "register"].includes(route.page) && React.createElement(NotFoundPage, { navigate }),
+    installPrompt && React.createElement("button", { className: "install-prompt", onClick: installApp, type: "button" }, React.createElement(Icon, { name: "plus" }), "Install"),
     React.createElement(Newsletter),
     React.createElement(Footer, { settings })
   );
@@ -310,11 +353,11 @@ function TopBar({ customer, logout }) {
   return React.createElement("div", { className: "topbar" },
     React.createElement("div", null, React.createElement("span", null, "$ USD"), React.createElement("span", null, "English"), React.createElement("span", null, "Hargaysa")),
     React.createElement("div", null,
-      React.createElement("a", { href: "#/home" }, "Home"),
-      React.createElement("a", { href: "#/about" }, "About Us"),
-      React.createElement("a", { href: "#/contact" }, "Contact Us"),
-      customer ? React.createElement("button", { className: "top-link", onClick: logout, type: "button" }, `Logout ${customer.name}`) : React.createElement("a", { href: "#/signin" }, "Sign In"),
-      !customer && React.createElement("a", { href: "#/register" }, "Register")
+      React.createElement("a", { href: "/" }, "Home"),
+      React.createElement("a", { href: "/about" }, "About Us"),
+      React.createElement("a", { href: "/contact" }, "Contact Us"),
+      customer ? React.createElement("button", { className: "top-link", onClick: logout, type: "button" }, `Logout ${customer.name}`) : React.createElement("a", { href: "/signin" }, "Sign In"),
+      !customer && React.createElement("a", { href: "/register" }, "Register")
     )
   );
 }
@@ -331,7 +374,7 @@ function Header({ theme, setTheme, query, setQuery, cartCount, navigate, setting
   }
 
   return React.createElement("header", { className: "header" },
-    React.createElement("a", { className: "brand", href: "#/home" }, React.createElement("img", { src: headerLogo, alt: "ONE TEN" })),
+    React.createElement("a", { className: "brand", href: "/" }, React.createElement("img", { src: headerLogo, alt: "ONE TEN" })),
     React.createElement("form", { className: "search", onSubmit: (event) => { event.preventDefault(); navigate("shop"); } },
       React.createElement("select", { "aria-label": "Search category" }, React.createElement("option", null, "All"), React.createElement("option", null, "Men's Fashion")),
       React.createElement("input", { value: query, onChange: (event) => setQuery(event.target.value), placeholder: "Search men's fashion" }),
@@ -340,7 +383,7 @@ function Header({ theme, setTheme, query, setQuery, cartCount, navigate, setting
     React.createElement("div", { className: "header-info" },
       React.createElement("div", { className: "hotline" }, React.createElement("span", null, "Hotline"), React.createElement("strong", null, settings.hotline || "(+252) 63 000 1010")),
       React.createElement("button", { className: "theme-btn", type: "button", onClick: toggleTheme, "aria-label": theme === "day" ? "Switch to night mode" : "Switch to day mode" }, React.createElement(Icon, { name: theme === "day" ? "sun" : "moon" })),
-      React.createElement("a", { className: "mini-action cart", href: "#/cart" }, "Cart ", React.createElement("strong", null, cartCount))
+      React.createElement("a", { className: "mini-action cart", href: "/cart" }, "Cart ", React.createElement("strong", null, cartCount))
     )
   );
 }
@@ -348,7 +391,7 @@ function Header({ theme, setTheme, query, setQuery, cartCount, navigate, setting
 function NavBarClean({ active }) {
   const links = [["home", "Home", "home"], ["shop", "Shop", "shop"], ["cart", "Cart", "cart"], ["order-history", "Orders", "history"], ["contact", "Contact", "phone"], ["profile", "Profile", "user"]];
   return React.createElement("nav", { className: "category-nav" },
-    links.map(([page, label, icon]) => React.createElement("a", { className: active === page ? "active" : "", href: `#/${page}`, key: page, title: label }, React.createElement("span", { className: "nav-icon" }, React.createElement(Icon, { name: icon })), React.createElement("span", { className: "nav-label" }, label)))
+    links.map(([page, label, icon]) => React.createElement("a", { className: active === page ? "active" : "", href: routePath(page), key: page, title: label }, React.createElement("span", { className: "nav-icon" }, React.createElement(Icon, { name: icon })), React.createElement("span", { className: "nav-label" }, label)))
   );
 }
 
@@ -356,13 +399,13 @@ function NavBar({ active }) {
   const links = [["home", "Home", "⌂"], ["shop", "Shop Grid", "▦"], ["about", "About Us", "i"], ["contact", "Contact Us", "☎"], ["cart", "Cart", "▣"], ["checkout", "Checkout", "✓"]];
   return React.createElement("nav", { className: "category-nav" },
     React.createElement("button", { type: "button" }, React.createElement("span", { className: "nav-icon" }, "▤"), "All Categories"),
-    links.map(([page, label, icon]) => React.createElement("a", { className: active === page ? "active" : "", href: `#/${page}`, key: page }, React.createElement("span", { className: "nav-icon" }, icon), label))
+    links.map(([page, label, icon]) => React.createElement("a", { className: active === page ? "active" : "", href: routePath(page), key: page }, React.createElement("span", { className: "nav-icon" }, icon), label))
   );
 }
 
 function HomePage({ ads, products, categories, addToCart, navigate, settings }) {
   const [active, setActive] = useState(0);
-  const activeAds = ads.length ? ads : [{ title: "ONE TEN Men's Fashion", subtitle: "Everything from $1 to $10.", button_text: "Shop Now", link: "#/shop", image: assets.hero }];
+  const activeAds = ads.length ? ads : [{ title: "ONE TEN Men's Fashion", subtitle: "Everything from $1 to $10.", button_text: "Shop Now", link: "/shop", image: assets.hero }];
 
   useEffect(() => {
     const timer = window.setInterval(() => setActive((value) => (value + 1) % activeAds.length), 4500);
@@ -379,7 +422,7 @@ function HomePage({ ads, products, categories, addToCart, navigate, settings }) 
         React.createElement("p", { className: "eyebrow" }, "ONE TEN ads"),
         React.createElement("h1", null, ad.title),
         React.createElement("p", null, ad.subtitle),
-        React.createElement("div", { className: "home-actions" }, React.createElement("a", { className: "btn primary", href: ad.link }, React.createElement("span", { className: "btn-icon" }, "›"), ad.button_text || "Shop Now"), React.createElement("a", { className: "btn ghost", href: "#/shop" }, React.createElement("span", { className: "btn-icon" }, "▦"), "View Products")),
+        React.createElement("div", { className: "home-actions" }, React.createElement("a", { className: "btn primary", href: ad.link || "/shop" }, React.createElement("span", { className: "btn-icon" }, "›"), ad.button_text || "Shop Now"), React.createElement("a", { className: "btn ghost", href: "/shop" }, React.createElement("span", { className: "btn-icon" }, "▦"), "View Products")),
         React.createElement("div", { className: "ad-dots" }, activeAds.map((item, index) => React.createElement("button", { className: active === index ? "active" : "", key: item.id || index, onClick: () => setActive(index), type: "button" }, index + 1)))
       ),
       React.createElement("div", { className: "hero-media" },
@@ -388,9 +431,9 @@ function HomePage({ ads, products, categories, addToCart, navigate, settings }) 
         React.createElement("button", { className: "hero-arrow next", onClick: nextAd, type: "button", "aria-label": "Next ad" }, "›")
       )
     ),
-    React.createElement("section", { className: "quick-cats" }, categories.slice(0, 6).map((cat) => React.createElement("a", { href: "#/shop", key: cat.id }, React.createElement("strong", null, cat.name), React.createElement("span", null, cat.price_mode === "max10" ? "Only $10" : "$1-$10")))),
+    React.createElement("section", { className: "quick-cats" }, categories.slice(0, 6).map((cat) => React.createElement("a", { href: "/shop", key: cat.id }, React.createElement("strong", null, cat.name), React.createElement("span", null, cat.price_mode === "max10" ? "Only $10" : "$1-$10")))),
     React.createElement("section", { className: "section" },
-      React.createElement("div", { className: "section-head" }, React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "Featured"), React.createElement("h2", null, "Top picks this week")), React.createElement("a", { href: "#/shop" }, "View all")),
+      React.createElement("div", { className: "section-head" }, React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "Featured"), React.createElement("h2", null, "Top picks this week")), React.createElement("a", { href: "/shop" }, "View all")),
       React.createElement("div", { className: "product-grid" }, products.slice(0, 6).map((product) => React.createElement(ProductCard, { key: product.id, product, settings, addToCart, navigate })))
     )
   );
@@ -496,13 +539,13 @@ function ProductCard({ product, settings = {}, view = "grid", addToCart, navigat
   const needsSize = getProductSizes(product).length > 0;
   return React.createElement("article", { className: `product-card ${view}`, onClick: () => navigate("product/" + product.id), role: "button", tabIndex: 0 },
     React.createElement("div", { className: "product-image" },
-      React.createElement("a", { className: "product-card-link", href: `#/product/${product.id}`, "aria-label": `View ${product.name}` }),
+      React.createElement("a", { className: "product-card-link", href: `/product/${product.id}`, "aria-label": `View ${product.name}` }),
       product.badge && React.createElement("span", { className: "badge" }, product.badge),
       settings.product_badge_logo && React.createElement("span", { className: "product-badge-logo" }, React.createElement("img", { src: settings.product_badge_logo, alt: "ONE TEN badge" })),
       React.createElement("img", { src: mainImage, alt: product.name, decoding: "async", loading: "lazy", style: { objectPosition: product.crop || "center" } }),
       React.createElement("div", { className: "hover-actions" }, React.createElement("button", { onClick: (event) => { event.stopPropagation(); navigate("product/" + product.id); }, type: "button" }, "View"), React.createElement("button", { onClick: (event) => { event.stopPropagation(); needsSize ? navigate("product/" + product.id) : addToCart(product); }, type: "button" }, needsSize ? "Choose Size" : "Add to Cart"))
     ),
-    React.createElement("div", { className: "product-content" }, React.createElement("span", { className: "category" }, product.category), React.createElement("h3", null, React.createElement("a", { href: `#/product/${product.id}`, onClick: (event) => event.stopPropagation() }, product.name)), React.createElement("div", { className: "rating" }, React.createElement("span", null, "Rating"), React.createElement("strong", null, product.rating || "4.8"), React.createElement("em", null, "Review(s)")), React.createElement("div", { className: "price" }, React.createElement("strong", null, `$${Number(product.price).toFixed(2)}`), product.old_price && React.createElement("del", null, `$${Number(product.old_price).toFixed(2)}`)))
+    React.createElement("div", { className: "product-content" }, React.createElement("span", { className: "category" }, product.category), React.createElement("h3", null, React.createElement("a", { href: `/product/${product.id}`, onClick: (event) => event.stopPropagation() }, product.name)), React.createElement("div", { className: "rating" }, React.createElement("span", null, "Rating"), React.createElement("strong", null, product.rating || "4.8"), React.createElement("em", null, "Review(s)")), React.createElement("div", { className: "price" }, React.createElement("strong", null, `$${Number(product.price).toFixed(2)}`), product.old_price && React.createElement("del", null, `$${Number(product.old_price).toFixed(2)}`)))
   );
 }
 
@@ -652,7 +695,7 @@ function CheckoutPage({ cart, total, customer, setCart, navigate, settings }) {
   const [message, setMessage] = useState("");
 
   if (!customer) {
-    return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: "Checkout" }), React.createElement("section", { className: "content-page empty-state" }, React.createElement("h2", null, "Register or sign in before ordering"), React.createElement("p", null, "You can view all products without an account, but ordering requires registration."), React.createElement("div", { className: "home-actions" }, React.createElement("a", { className: "btn primary", href: "#/register" }, "Register"), React.createElement("a", { className: "btn ghost", href: "#/signin" }, "Sign In"))));
+    return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: "Checkout" }), React.createElement("section", { className: "content-page empty-state" }, React.createElement("h2", null, "Register or sign in before ordering"), React.createElement("p", null, "You can view all products without an account, but ordering requires registration."), React.createElement("div", { className: "home-actions" }, React.createElement("a", { className: "btn primary", href: "/register" }, "Register"), React.createElement("a", { className: "btn ghost", href: "/signin" }, "Sign In"))));
   }
 
   function submit(event) {
@@ -772,7 +815,7 @@ function AuthPage({ mode, setCustomer, navigate }) {
       .catch((error) => setMessage(error.message));
   }
 
-  return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: register ? "Register" : "Sign In" }), React.createElement("section", { className: "auth-wrap" }, React.createElement("form", { className: "form-card", onSubmit: submit }, React.createElement("h2", null, register ? "Create account" : "Welcome back"), message && React.createElement("p", { className: "form-message" }, message), register && React.createElement("input", { placeholder: "Full name", required: true, value: form.name, onChange: (event) => setForm({ ...form, name: event.target.value }) }), React.createElement("input", { placeholder: "Email address", required: true, type: "email", value: form.email, onChange: (event) => setForm({ ...form, email: event.target.value }) }), React.createElement("input", { placeholder: "Password", required: true, type: "password", value: form.password, onChange: (event) => setForm({ ...form, password: event.target.value }) }), React.createElement("button", { type: "submit" }, register ? "Register" : "Sign In"), React.createElement("a", { href: register ? "#/signin" : "#/register" }, register ? "Already have an account?" : "Create new account"))));
+  return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: register ? "Register" : "Sign In" }), React.createElement("section", { className: "auth-wrap" }, React.createElement("form", { className: "form-card", onSubmit: submit }, React.createElement("h2", null, register ? "Create account" : "Welcome back"), message && React.createElement("p", { className: "form-message" }, message), register && React.createElement("input", { placeholder: "Full name", required: true, value: form.name, onChange: (event) => setForm({ ...form, name: event.target.value }) }), React.createElement("input", { placeholder: "Email address", required: true, type: "email", value: form.email, onChange: (event) => setForm({ ...form, email: event.target.value }) }), React.createElement("input", { placeholder: "Password", required: true, type: "password", value: form.password, onChange: (event) => setForm({ ...form, password: event.target.value }) }), React.createElement("button", { type: "submit" }, register ? "Register" : "Sign In"), React.createElement("a", { href: register ? "/signin" : "/register" }, register ? "Already have an account?" : "Create new account"))));
 }
 
 function Pagination({ page, pageCount, setPage }) {
@@ -802,8 +845,8 @@ function Newsletter() {
 }
 
 function Footer({ settings }) {
-  const infoLinks = Array.isArray(settings.information_links) ? settings.information_links : [{ label: "About Us", href: "#/about" }, { label: "Contact Us", href: "#/contact" }, { label: "Shop Grid", href: "#/shop" }];
-  const departmentLinks = Array.isArray(settings.department_links) ? settings.department_links : [{ label: "Shirts", href: "#/shop" }, { label: "Accessories", href: "#/shop" }, { label: "Admin Login", href: "/admin" }];
+  const infoLinks = Array.isArray(settings.information_links) ? settings.information_links : [{ label: "About Us", href: "/about" }, { label: "Contact Us", href: "/contact" }, { label: "Shop Grid", href: "/shop" }];
+  const departmentLinks = Array.isArray(settings.department_links) ? settings.department_links : [{ label: "Shirts", href: "/shop" }, { label: "Accessories", href: "/shop" }, { label: "Admin Login", href: "/admin" }];
   return React.createElement("footer", { className: "footer" },
     React.createElement("div", { className: "footer-brand" }, React.createElement("img", { src: settings.footer_logo || settings.logo_night || settings.logo_image || assets.logoWhite, alt: "ONE TEN" }), React.createElement("p", null, settings.footer_text || "Men's fashion, clean prices, Hargaysa delivery.")),
     React.createElement("div", null, React.createElement("h3", null, settings.contact_title || "Get In Touch"), React.createElement("p", null, `Phone: ${settings.phone || "+252 63 000 1010"}`), React.createElement("p", null, settings.email || "support@oneten.shop")),
