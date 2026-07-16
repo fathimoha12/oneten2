@@ -4,5 +4,6 @@ __pycache__/
 .env.local
 .next/
 node_modules/
+.next-dev-*.log
 oneten.sqlite3
 supabase_full_export.sql

@@ -212,7 +212,19 @@ function App() {
 
   useEffect(() => {
     if ("serviceWorker" in navigator && window.location.protocol !== "file:") {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      const isLocalDevelopment = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+      if (isLocalDevelopment) {
+        navigator.serviceWorker.getRegistrations().then((registrations) => {
+          registrations.forEach((registration) => registration.unregister());
+        });
+        if ("caches" in window) {
+          caches.keys().then((keys) => {
+            keys.filter((key) => key.startsWith("one-ten-")).forEach((key) => caches.delete(key));
+          });
+        }
+      } else {
+        navigator.serviceWorker.register("/sw.js").catch(() => {});
+      }
     }
     const onBeforeInstall = (event) => {
       event.preventDefault();

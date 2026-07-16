@@ -1,4 +1,12 @@
 /** @type {import('next').NextConfig} */
+const scriptSources = ["'self'", "'unsafe-inline'"];
+
+// Next.js React Refresh evaluates its development runtime in the browser.
+// Keep that exception local to `next dev`; production retains the stricter CSP.
+if (process.env.NODE_ENV !== "production") {
+  scriptSources.push("'unsafe-eval'");
+}
+
 const securityHeaders = [
   {
     key: "Content-Security-Policy",
@@ -7,7 +15,7 @@ const securityHeaders = [
       "base-uri 'self'",
       "object-src 'none'",
       "frame-ancestors 'none'",
-      "script-src 'self' 'unsafe-inline' https://unpkg.com",
+      `script-src ${scriptSources.join(" ")}`,
       "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
       "font-src 'self' https://fonts.gstatic.com data:",
       "img-src 'self' data: blob: https:",

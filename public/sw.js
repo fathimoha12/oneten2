@@ -1,4 +1,4 @@
-const CACHE_VERSION = "one-ten-v20260716";
+const CACHE_VERSION = "one-ten-v20260716-2";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -58,6 +58,10 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+
+  // Next.js build files are already fingerprinted in production. Let the
+  // browser fetch them directly so development updates can never go stale.
+  if (url.pathname.startsWith("/_next/")) return;
 
   if (request.mode === "navigate") {
     event.respondWith(

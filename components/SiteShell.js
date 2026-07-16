@@ -1,7 +1,15 @@
 import Head from "next/head";
 import Script from "next/script";
+import React from "react";
+import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260716-pwa-security";
+const ASSET_VERSION = "20260716-white-screen-fix";
+
+if (typeof window !== "undefined") {
+  window.React = React;
+  window.ReactDOM = { createRoot };
+  window.API_BASE_URL = "";
+}
 
 export default function SiteShell({
   title = "ONE TEN | Men's Fashion",
@@ -20,12 +28,8 @@ export default function SiteShell({
         <link rel="manifest" href="/manifest.json" />
         <link rel="apple-touch-icon" href="/assets/logo-red.png" />
         <link rel="preload" as="image" href="/assets/ai-hero.png" />
-        <link rel="stylesheet" href={`/styles.css?v=${ASSET_VERSION}`} />
       </Head>
       <div id="root" />
-      <Script src="https://unpkg.com/react@18/umd/react.production.min.js" strategy="afterInteractive" />
-      <Script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" strategy="afterInteractive" />
-      <Script src={`/config.js?v=${ASSET_VERSION}`} strategy="afterInteractive" />
       <Script src={`/app.js?v=${ASSET_VERSION}`} strategy="afterInteractive" />
     </>
   );
