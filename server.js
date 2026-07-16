@@ -541,9 +541,24 @@ async function handleGet(req, res, pathname) {
     if (!admin) return sendJson(req, res, 401, { error: "Admin login required" });
     if (pathname === "/api/admin/bootstrap") {
       const payload = await publicPayload(false);
-      const [products, orders, subscribers, orderItems, revenue] = await Promise.all([
+      const [products, orders, customers, subscribers, orderItems, revenue] = await Promise.all([
         query(`SELECT p.*, c.name AS category FROM products p LEFT JOIN categories c ON c.id = p.category_id ORDER BY p.id DESC`),
         query(`SELECT o.*, COUNT(oi.id) AS items FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id GROUP BY o.id ORDER BY o.id DESC`),
+        query(`SELECT
+                 c.id,
+                 c.name,
+                 c.email,
+                 c.created_at,
+                 COUNT(o.id)::int AS order_count,
+                 COALESCE(SUM(o.total), 0) AS total_spent,
+                 (SELECT o2.phone FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.phone, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS phone,
+                 (SELECT o2.address FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.address, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS address,
+                 (SELECT o2.id FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_id,
+                 (SELECT o2.created_at FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_at
+               FROM customers c
+               LEFT JOIN orders o ON o.customer_id = c.id
+               GROUP BY c.id, c.name, c.email, c.created_at
+               ORDER BY c.id DESC`),
         query("SELECT * FROM newsletter_subscribers ORDER BY id DESC"),
         query("SELECT * FROM order_items ORDER BY order_id DESC, id"),
         query("SELECT COALESCE(SUM(total), 0) AS total FROM orders"),
@@ -555,6 +570,7 @@ async function handleGet(req, res, pathname) {
       });
       payload.products = products.rows.map(adminProductRecord);
       payload.orders = orders.rows.map((order) => ({ ...order, order_items: byOrder.get(String(order.id)) || [] }));
+      payload.customers = customers.rows;
       payload.subscribers = subscribers.rows;
       payload.admin = { id: admin.id, username: admin.username, created_at: admin.created_at };
       payload.dashboard = {
@@ -562,6 +578,7 @@ async function handleGet(req, res, pathname) {
         categories: payload.categories.length,
         ads: payload.ads.length,
         orders: payload.orders.length,
+        customers: payload.customers.length,
         subscribers: payload.subscribers.length,
         revenue: Number(revenue.rows[0].total || 0),
         lowStock: payload.products.filter((product) => Number(product.stock || 0) <= 12).length,

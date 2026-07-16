@@ -1,0 +1,56 @@
+{
+  "categories": [
+    { "id": 1, "name": "Shirts" },
+    { "id": 2, "name": "Pants" },
+    { "id": 3, "name": "Accessories" }
+  ],
+  "ads": [],
+  "settings": {
+    "brand_name": "ONE TEN",
+    "hotline": "(+252) 63 000 1010",
+    "phone": "+252 63 000 1010"
+  },
+  "products": [
+    {
+      "id": 9001,
+      "category_id": 1,
+      "category": "Shirts",
+      "name": "ONE TEN Multi-Size Shirt",
+      "price": 7,
+      "old_price": 10,
+      "badge": "Local Demo",
+      "rating": "4.9",
+      "stock": 12,
+      "product_sizes": [
+        { "size": "S", "stock": 4 },
+        { "size": "M", "stock": 5 },
+        { "size": "XL", "stock": 3 }
+      ],
+      "image": "/assets/ai-products.png",
+      "images": ["/assets/ai-products.png"],
+      "crop": "center",
+      "description": "Local-only product used to verify multi-size selection when a development database is not configured.",
+      "active": 1
+    },
+    {
+      "id": 9002,
+      "category_id": 2,
+      "category": "Pants",
+      "name": "ONE TEN Size-Range Pants",
+      "price": 9,
+      "badge": "Local Demo",
+      "rating": "4.8",
+      "stock": 8,
+      "product_sizes": [
+        { "size": "30", "stock": 2 },
+        { "size": "32", "stock": 4 },
+        { "size": "34", "stock": 2 }
+      ],
+      "image": "/assets/ai-products.png",
+      "images": ["/assets/ai-products.png"],
+      "crop": "center",
+      "description": "Local-only pants product with separate stock for each waist size.",
+      "active": 1
+    }
+  ]
+}

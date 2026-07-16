@@ -3,12 +3,12 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260716-white-screen-fix";
+const ASSET_VERSION = "20260716-multisize-admin-3";
 
 if (typeof window !== "undefined") {
   window.React = React;
   window.ReactDOM = { createRoot };
-  window.API_BASE_URL = "";
+  window.API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 }
 
 export default function AdminShell() {
@@ -18,6 +18,7 @@ export default function AdminShell() {
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#f20d14" />
+        <meta name="one-ten-api-base" content={process.env.NEXT_PUBLIC_API_BASE_URL || ""} />
         <title>ONE TEN Admin</title>
       </Head>
       <div id="admin-root" />

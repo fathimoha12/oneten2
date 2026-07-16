@@ -7,7 +7,7 @@ const assets = {
   products: "assets/ai-products.png",
 };
 
-const API_BASE_URL = (window.API_BASE_URL || localStorage.getItem("API_BASE_URL") || "").replace(/\/$/, "");
+const API_BASE_URL = (document.querySelector('meta[name="one-ten-api-base"]')?.content || window.API_BASE_URL || localStorage.getItem("API_BASE_URL") || "").replace(/\/$/, "");
 
 function apiUrl(path) {
   return path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
@@ -162,15 +162,26 @@ function buildWhatsAppOrderUrl({ order, cart, customer, form, total, settings = 
     "Products:",
   ].filter(Boolean);
 
-  cart.forEach((item, index) => {
+  const productGroups = new Map();
+  cart.forEach((item) => {
+    const key = String(item.id);
+    if (!productGroups.has(key)) productGroups.set(key, { ...item, qty: 0, lineTotal: 0, sizes: [] });
+    const group = productGroups.get(key);
+    const itemQty = Math.max(1, Number(item.qty || 1));
+    group.qty += itemQty;
+    group.lineTotal += Number(item.price || 0) * itemQty;
+    group.sizes.push(`${item.size || "No size"} x${itemQty}`);
+  });
+
+  [...productGroups.values()].forEach((item, index) => {
     const imageLink = absoluteUrl(item.image) || productPublicLink(item);
     lines.push(
       `${index + 1}. ${item.name}`,
       `   Image: ${imageLink}`,
       `   Price: $${Number(item.price || 0).toFixed(2)}`,
-      `   Qty: ${item.qty}`,
-      `   Size: ${item.size || "No size"}`,
-      `   Line Total: $${(Number(item.price || 0) * Number(item.qty || 1)).toFixed(2)}`
+      `   Sizes / Qty: ${item.sizes.join(" | ")}`,
+      `   Total Qty: ${item.qty}`,
+      `   Line Total: $${item.lineTotal.toFixed(2)}`
     );
   });
 
@@ -254,20 +265,25 @@ function App() {
   }, [cart]);
 
   function loadPublic() {
-    api("/api/public/bootstrap")
-      .then((data) => {
-        setCategories(data.categories || []);
-        setAds(data.ads || []);
-        setSettings(data.settings || {});
-      })
+    const applyData = (bootstrap, catalog) => {
+      setCategories(bootstrap.categories || []);
+      setAds(bootstrap.ads || []);
+      setSettings(bootstrap.settings || {});
+      setProducts(catalog.products || []);
+    };
+    Promise.all([api("/api/public/bootstrap"), api("/api/public/products")])
+      .then(([bootstrap, catalog]) => applyData(bootstrap, catalog))
       .catch(() => {
-        setCategories([]);
-        setAds([]);
-        setSettings({});
+        const isLocalDevelopment = ["localhost", "127.0.0.1"].includes(window.location.hostname);
+        if (!isLocalDevelopment) {
+          applyData({}, {});
+          return;
+        }
+        fetch("/dev-catalog.json")
+          .then((response) => response.ok ? response.json() : Promise.reject(new Error("Development catalog unavailable")))
+          .then((fixture) => applyData(fixture, fixture))
+          .catch(() => applyData({}, {}));
       });
-    api("/api/public/products")
-      .then((data) => setProducts(data.products || []))
-      .catch(() => setProducts([]));
   }
 
   function loadCustomer() {
@@ -324,6 +340,51 @@ function App() {
     return true;
   }
 
+  function addManyToCart(product, selections = []) {
+    const sizeInventory = getProductSizes(product);
+    const combined = new Map();
+    (Array.isArray(selections) ? selections : []).forEach((selection) => {
+      const size = String(selection && selection.size || "").trim().toUpperCase();
+      const qty = Math.max(1, Number(selection && selection.qty) || 1);
+      if (size) combined.set(size, (combined.get(size) || 0) + qty);
+    });
+    const lines = [...combined.entries()].map(([size, qty]) => ({ size, qty }));
+    if (!lines.length) {
+      setNotice("Dooro ugu yaraan hal size iyo qty-ga aad rabto");
+      window.setTimeout(() => setNotice(""), 2200);
+      return false;
+    }
+
+    const currentCart = safeCartItems(cart);
+    for (const line of lines) {
+      const inventory = sizeInventory.find((item) => item.size === line.size);
+      const existing = currentCart.find((item) => String(item.id) === String(product.id) && String(item.size || "") === line.size);
+      const requested = Number(existing && existing.qty || 0) + line.qty;
+      if (!inventory || inventory.stock <= 0) {
+        setNotice(`Size ${line.size} stock kama yaallo hadda`);
+        window.setTimeout(() => setNotice(""), 2200);
+        return false;
+      }
+      if (requested > inventory.stock) {
+        setNotice(`Kaliya ${inventory.stock} ayaa ka yaalla ${product.name} size ${line.size}`);
+        window.setTimeout(() => setNotice(""), 2400);
+        return false;
+      }
+    }
+
+    const nextCart = currentCart.slice();
+    lines.forEach((line) => {
+      const index = nextCart.findIndex((item) => String(item.id) === String(product.id) && String(item.size || "") === line.size);
+      if (index >= 0) nextCart[index] = { ...nextCart[index], qty: Number(nextCart[index].qty) + line.qty };
+      else nextCart.unshift({ id: product.id, size: line.size, qty: line.qty });
+    });
+    const pieces = lines.reduce((sum, line) => sum + line.qty, 0);
+    setCart(nextCart);
+    setNotice(`${product.name}: ${pieces} xabbo oo ${lines.length} size ah ayaa cart-ka la geliyey`);
+    window.setTimeout(() => setNotice(""), 1800);
+    return true;
+  }
+
   function logout() {
     localStorage.removeItem("customerToken");
     setCustomer(null);
@@ -336,7 +397,7 @@ function App() {
     return product ? { ...product, size: item.size || "", sizeStock: getSizeStock(product, item.size), qty: item.qty } : { ...item, name: "Product", price: 0, image: assets.products, sizeStock: 0 };
   }), [cart, products]);
   const total = cartProducts.reduce((sum, item) => sum + Number(item.price) * Number(item.qty), 0);
-  const cartCount = cart.length;
+  const cartCount = new Set(cart.map((item) => String(item.id))).size;
 
   return React.createElement("div", { className: `store ${theme}` },
     React.createElement(TopBar, { customer, logout }),
@@ -345,7 +406,7 @@ function App() {
     notice && React.createElement("div", { className: "notice" }, notice),
     route.page === "home" && React.createElement(HomePage, { ads, products, categories, addToCart, navigate, settings }),
     route.page === "shop" && React.createElement(ShopPage, { products, categories, query, addToCart, navigate, settings }),
-    route.page === "product" && React.createElement(ProductPage, { product: activeProduct, products, settings, addToCart, navigate }),
+    route.page === "product" && React.createElement(ProductPage, { product: activeProduct, products, settings, addToCart, addManyToCart, navigate }),
     route.page === "about" && React.createElement(AboutPage, { settings }),
     route.page === "contact" && React.createElement(ContactPage, { settings }),
     route.page === "cart" && React.createElement(CartPage, { cart: cartProducts, setCart, total, navigate }),
@@ -561,7 +622,7 @@ function ProductCard({ product, settings = {}, view = "grid", addToCart, navigat
   );
 }
 
-function ProductPage({ product, products = [], settings = {}, addToCart, navigate }) {
+function ProductPage({ product, products = [], settings = {}, addToCart, addManyToCart, navigate }) {
   const [detailProduct, setDetailProduct] = useState(null);
   useEffect(() => {
     setDetailProduct(null);
@@ -579,30 +640,56 @@ function ProductPage({ product, products = [], settings = {}, addToCart, navigat
   const currentProduct = detailProduct || product;
   const images = currentProduct ? getProductImages(currentProduct) : [assets.products];
   const [activeImage, setActiveImage] = useState(images[0]);
-  const [selectedSize, setSelectedSize] = useState("");
+  const [sizeQuantities, setSizeQuantities] = useState({});
   const [qty, setQty] = useState(1);
   const [message, setMessage] = useState("");
   useEffect(() => setActiveImage(images[0]), [currentProduct && currentProduct.id, images[0]]);
   useEffect(() => {
-    const sizes = getProductSizes(currentProduct);
-    setSelectedSize(sizes[0] ? sizes[0].size : "");
+    setSizeQuantities({});
     setQty(1);
     setMessage("");
   }, [currentProduct && currentProduct.id]);
   if (!currentProduct) return React.createElement(NotFoundPage, { navigate });
   const availableSizes = getProductSizes(currentProduct);
-  const selectedStock = getSizeStock(currentProduct, selectedSize);
   const totalStock = availableSizes.length ? availableSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0) : Number(currentProduct.stock || 0);
+  const selectedLines = availableSizes
+    .filter((item) => Number(sizeQuantities[item.size] || 0) > 0)
+    .map((item) => ({ size: item.size, qty: Math.min(item.stock, Math.max(1, Number(sizeQuantities[item.size]) || 1)), stock: item.stock }));
+  const selectedPieces = selectedLines.reduce((sum, item) => sum + item.qty, 0);
+
+  function toggleSize(item) {
+    setMessage("");
+    setSizeQuantities((current) => {
+      const next = { ...current };
+      if (Number(next[item.size] || 0) > 0) delete next[item.size];
+      else next[item.size] = 1;
+      return next;
+    });
+  }
+
+  function updateSizeQty(item, value) {
+    const nextQty = Math.min(item.stock, Math.max(1, Number(value) || 1));
+    setMessage("");
+    setSizeQuantities((current) => ({ ...current, [item.size]: nextQty }));
+  }
+
   function addSelectedToCart() {
-    if (availableSizes.length && !selectedSize) {
-      setMessage("Macmiil, size-kan waxba kama yaalaan. Fadlan dooro size stock leh.");
+    if (availableSizes.length) {
+      if (!selectedLines.length) {
+        setMessage("Dooro ugu yaraan hal size ka hor intaadan cart-ka gelin.");
+        return;
+      }
+      if (addManyToCart(currentProduct, selectedLines)) {
+        setMessage("");
+        setSizeQuantities({});
+      }
       return;
     }
-    if (qty > selectedStock) {
-      setMessage(`Kaliya ${selectedStock} ayaa ka yaalla size ${selectedSize || "kan"}.`);
+    if (qty > totalStock) {
+      setMessage(`Kaliya ${totalStock} ayaa ka yaalla ${currentProduct.name}.`);
       return;
     }
-    if (addToCart(currentProduct, selectedSize, qty)) setMessage("");
+    if (addToCart(currentProduct, "", qty)) setMessage("");
   }
   const relatedByCategory = products
     .filter((item) => String(item.id) !== String(currentProduct.id) && (String(item.category_id) === String(currentProduct.category_id) || item.category === currentProduct.category))
@@ -612,16 +699,31 @@ function ProductPage({ product, products = [], settings = {}, addToCart, navigat
     React.createElement("img", { src: activeImage || images[0], alt: currentProduct.name, decoding: "async", loading: "eager", style: { objectPosition: currentProduct.crop || "center" } }),
     images.length > 1 && React.createElement("div", { className: "detail-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement("img", { src: image, alt: `${currentProduct.name} ${index + 1}`, decoding: "async", loading: "lazy" }))))
   ), React.createElement("div", { className: "detail-info" }, React.createElement("p", { className: "eyebrow" }, currentProduct.category), React.createElement("h2", null, currentProduct.name), React.createElement("p", null, currentProduct.description), React.createElement("div", { className: "price detail-price" }, React.createElement("strong", null, `$${Number(currentProduct.price).toFixed(2)}`), currentProduct.old_price && React.createElement("del", null, `$${Number(currentProduct.old_price).toFixed(2)}`)),
-    availableSizes.length > 0 && React.createElement("div", { className: "size-picker" },
-      React.createElement("div", { className: "size-picker-head" }, React.createElement("strong", null, "Choose Size"), React.createElement("span", null, selectedSize ? `${selectedStock} available in ${selectedSize}` : "Select a size")),
-      React.createElement("div", { className: "size-options" }, availableSizes.map((item) => React.createElement("button", { className: selectedSize === item.size ? "active" : "", key: item.size, onClick: () => { setSelectedSize(item.size); setQty(1); setMessage(""); }, type: "button" }, React.createElement("span", null, item.size), React.createElement("em", null, item.stock))))
+    availableSizes.length > 0 && React.createElement("div", { className: "size-picker multi-size-picker" },
+      React.createElement("div", { className: "size-picker-head" }, React.createElement("div", null, React.createElement("strong", null, "Choose one or more sizes"), React.createElement("small", null, "Size kasta qty u gaar ah dooro")), React.createElement("span", null, selectedLines.length ? `${selectedLines.length} sizes / ${selectedPieces} pieces` : "No size selected")),
+      React.createElement("div", { className: "multi-size-options" }, availableSizes.map((item) => {
+        const selected = Number(sizeQuantities[item.size] || 0) > 0;
+        const itemQty = selected ? Number(sizeQuantities[item.size]) : 1;
+        return React.createElement("div", { className: `multi-size-option ${selected ? "selected" : ""}`, key: item.size },
+          React.createElement("button", { "aria-pressed": selected, className: "multi-size-choice", onClick: () => toggleSize(item), type: "button" },
+            React.createElement("span", { className: "size-check" }, selected ? React.createElement(Icon, { name: "check" }) : ""),
+            React.createElement("span", null, React.createElement("strong", null, item.size), React.createElement("small", null, `${item.stock} available`))
+          ),
+          selected && React.createElement("div", { className: "size-qty-stepper" },
+            React.createElement("button", { disabled: itemQty <= 1, onClick: () => updateSizeQty(item, itemQty - 1), type: "button", "aria-label": `Reduce ${item.size} quantity` }, React.createElement(Icon, { name: "minus" })),
+            React.createElement("input", { "aria-label": `${item.size} quantity`, max: item.stock, min: "1", onChange: (event) => updateSizeQty(item, event.target.value), type: "number", value: itemQty }),
+            React.createElement("button", { disabled: itemQty >= item.stock, onClick: () => updateSizeQty(item, itemQty + 1), type: "button", "aria-label": `Increase ${item.size} quantity` }, React.createElement(Icon, { name: "plus" }))
+          )
+        );
+      }))
     ),
-    React.createElement("div", { className: "detail-buy-row" },
-      React.createElement("label", null, React.createElement("span", null, "Qty"), React.createElement("input", { max: selectedStock || currentProduct.stock || 1, min: "1", onChange: (event) => setQty(Math.max(1, Number(event.target.value) || 1)), type: "number", value: qty })),
-      React.createElement("p", null, availableSizes.length ? `Total stock: ${totalStock} / ${selectedSize}: ${selectedStock}` : `Stock: ${totalStock}`)
+    availableSizes.length === 0 && React.createElement("div", { className: "detail-buy-row" },
+      React.createElement("label", null, React.createElement("span", null, "Qty"), React.createElement("input", { max: currentProduct.stock || 1, min: "1", onChange: (event) => setQty(Math.max(1, Number(event.target.value) || 1)), type: "number", value: qty })),
+      React.createElement("p", null, `Stock: ${totalStock}`)
     ),
+    availableSizes.length > 0 && React.createElement("div", { className: "multi-size-summary" }, React.createElement("span", null, `Total stock ${totalStock}`), React.createElement("strong", null, selectedPieces ? `${selectedPieces} pieces selected` : "Select sizes above")),
     message && React.createElement("p", { className: "stock-message" }, message),
-    React.createElement("button", { className: "btn primary", disabled: selectedStock <= 0, onClick: addSelectedToCart, type: "button" }, selectedStock <= 0 ? "Out of Stock" : "Add to Cart")
+    React.createElement("button", { className: "btn primary multi-size-add", disabled: totalStock <= 0, onClick: addSelectedToCart, type: "button" }, totalStock <= 0 ? "Out of Stock" : selectedPieces ? `Add ${selectedPieces} Pieces to Cart` : availableSizes.length ? "Select Sizes to Add" : "Add to Cart")
   )),
     related.length > 0 && React.createElement("section", { className: "section related-products" },
       React.createElement("div", { className: "section-head" }, React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "Similar style"), React.createElement("h2", null, "Products close to this"))),
@@ -640,6 +742,7 @@ function ContactPage({ settings }) {
 
 function CartPage({ cart, setCart, total, navigate }) {
   const [message, setMessage] = useState("");
+  const uniqueProductCount = new Set(cart.map((item) => String(item.id))).size;
   function updateQty(target, qty) {
     const requested = Math.max(1, Number(qty) || 1);
     const hasSizeInventory = getProductSizes(target).length > 0;
@@ -669,7 +772,7 @@ function CartPage({ cart, setCart, total, navigate }) {
   const fullCart = React.createElement("div", { className: "cart-layout" },
     React.createElement("div", { className: "cart-list" },
       React.createElement("div", { className: "mobile-page-title" }, React.createElement("button", { onClick: () => navigate("shop"), type: "button" }, React.createElement(Icon, { name: "back" })), React.createElement("h2", null, "Cart"), React.createElement("button", { type: "button" }, React.createElement(Icon, { name: "menu" }))),
-      React.createElement("div", { className: "cart-total-line" }, "Total Item", React.createElement("span", null, `(${cart.length})`)),
+      React.createElement("div", { className: "cart-total-line" }, "Total Products", React.createElement("span", null, `(${uniqueProductCount})`)),
       message && React.createElement("p", { className: "stock-message cart-stock-message" }, message),
       cart.map((item) => React.createElement("article", { className: "cart-item", key: cartKey(item) },
         React.createElement("span", { className: "cart-check" }, React.createElement(Icon, { name: "check" })),

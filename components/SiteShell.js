@@ -3,12 +3,12 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260716-white-screen-fix";
+const ASSET_VERSION = "20260716-multisize-admin-3";
 
 if (typeof window !== "undefined") {
   window.React = React;
   window.ReactDOM = { createRoot };
-  window.API_BASE_URL = "";
+  window.API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "";
 }
 
 export default function SiteShell({
@@ -22,6 +22,7 @@ export default function SiteShell({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
         <meta name="theme-color" content="#f20d14" />
         <meta name="description" content={description} />
+        <meta name="one-ten-api-base" content={process.env.NEXT_PUBLIC_API_BASE_URL || ""} />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-title" content="ONE TEN" />
         <title>{title}</title>
