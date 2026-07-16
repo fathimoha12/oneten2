@@ -28,6 +28,18 @@ test("getSizeStock returns selected size stock only", () => {
   assert.equal(getSizeStock(product, "M"), 0);
 });
 
+test("products without variants use ONE SIZE as the stock source", () => {
+  const product = { product_sizes: [], stock: 7 };
+  assert.deepEqual(getProductSizes(product), [{ size: "ONE SIZE", stock: 7 }]);
+  assert.equal(getSizeStock(product, ""), 7);
+});
+
+test("explicit sold-out sizes override stale general stock", () => {
+  const product = { product_sizes: [{ size: "S", stock: 0 }], stock: 7 };
+  assert.deepEqual(getProductSizes(product), []);
+  assert.equal(getSizeStock(product, "S"), 0);
+});
+
 test("normalizeWhatsAppNumber converts Somaliland local number to international format", () => {
   assert.equal(normalizeWhatsAppNumber("0633454984"), "252633454984");
 });

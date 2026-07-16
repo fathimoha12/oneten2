@@ -4218,6 +4218,17 @@ img {
   }
 }
 
+.drawer-size-grid > .sold-out {
+  background: #111;
+  border-color: #111;
+  color: #fff;
+}
+
+.drawer-size-grid > .sold-out span {
+  color: #ff1a24;
+  font-weight: 800;
+}
+
 @media (max-width: 720px) {
   .admin-main {
     padding: 14px;

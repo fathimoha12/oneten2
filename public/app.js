@@ -65,12 +65,16 @@ function getProductImages(product) {
 }
 
 function getProductSizes(product) {
-  return (Array.isArray(product && product.product_sizes) ? product.product_sizes : [])
+  const source = Array.isArray(product && product.product_sizes) ? product.product_sizes : [];
+  const available = source
     .map((item) => ({
       size: String(item && item.size ? item.size : "").trim().toUpperCase(),
       stock: Math.max(0, Number(item && item.stock) || 0),
     }))
     .filter((item) => item.size && item.stock > 0);
+  if (available.length || source.length) return available;
+  const stock = Math.max(0, Number(product && product.stock) || 0);
+  return stock > 0 ? [{ size: "ONE SIZE", stock }] : [];
 }
 
 function cartKey(item) {
@@ -78,9 +82,12 @@ function cartKey(item) {
 }
 
 function getSizeStock(product, size) {
+  const hasDefinedSizes = Array.isArray(product && product.product_sizes) && product.product_sizes.length > 0;
   const sizes = getProductSizes(product);
-  if (!sizes.length) return Math.max(0, Number(product && product.stock) || 0);
-  const match = sizes.find((item) => item.size === String(size || "").toUpperCase());
+  if (!sizes.length) return hasDefinedSizes ? 0 : Math.max(0, Number(product && product.stock) || 0);
+  const requestedSize = String(size || "").toUpperCase();
+  const selectedSize = requestedSize || (sizes.length === 1 && sizes[0].size === "ONE SIZE" ? "ONE SIZE" : "");
+  const match = sizes.find((item) => item.size === selectedSize);
   return match ? match.stock : 0;
 }
 
@@ -651,7 +658,10 @@ function ProductPage({ product, products = [], settings = {}, addToCart, addMany
   }, [currentProduct && currentProduct.id]);
   if (!currentProduct) return React.createElement(NotFoundPage, { navigate });
   const availableSizes = getProductSizes(currentProduct);
-  const totalStock = availableSizes.length ? availableSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0) : Number(currentProduct.stock || 0);
+  const hasDefinedSizes = Array.isArray(currentProduct.product_sizes) && currentProduct.product_sizes.length > 0;
+  const totalStock = availableSizes.length
+    ? availableSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0)
+    : hasDefinedSizes ? 0 : Number(currentProduct.stock || 0);
   const selectedLines = availableSizes
     .filter((item) => Number(sizeQuantities[item.size] || 0) > 0)
     .map((item) => ({ size: item.size, qty: Math.min(item.stock, Math.max(1, Number(sizeQuantities[item.size]) || 1)), stock: item.stock }));

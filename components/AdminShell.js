@@ -3,7 +3,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260716-multisize-admin-3";
+const ASSET_VERSION = "20260716-inventory-unified-4";
 
 if (typeof window !== "undefined") {
   window.React = React;

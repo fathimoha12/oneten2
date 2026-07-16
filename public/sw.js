@@ -1,4 +1,4 @@
-const CACHE_VERSION = "one-ten-v20260716-4";
+const CACHE_VERSION = "one-ten-v20260716-5";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 

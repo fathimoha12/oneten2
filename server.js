@@ -110,7 +110,12 @@ function productSizes(value) {
     const stock = Math.max(0, Number.parseInt(item.stock || 0, 10) || 0);
     if (size) clean.set(size, (clean.get(size) || 0) + stock);
   });
-  return [...clean.entries()].map(([size, stock]) => ({ size, stock }));
+  const rows = [...clean.entries()].map(([size, stock]) => ({ size, stock }));
+  if (rows.length) return rows;
+  const hasFallbackStock = !Array.isArray(value) && value && typeof value === "object" && value.stock !== undefined;
+  return hasFallbackStock
+    ? [{ size: "ONE SIZE", stock: Math.max(0, Number.parseInt(value.stock || 0, 10) || 0) }]
+    : [];
 }
 
 function productTotalStock(sizeRows, fallback = 0) {
@@ -272,6 +277,24 @@ async function ensureRuntimeSchema() {
   await query("SELECT 1");
   await query("ALTER TABLE products ADD COLUMN IF NOT EXISTS product_sizes jsonb DEFAULT '[]'::jsonb");
   await query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS size text DEFAULT ''");
+  await query(
+    `UPDATE products
+     SET product_sizes = jsonb_build_array(jsonb_build_object('size', 'ONE SIZE', 'stock', GREATEST(COALESCE(stock, 0), 0)))
+     WHERE product_sizes IS NULL OR product_sizes = '[]'::jsonb`
+  );
+  await query(
+    `WITH inventory_totals AS (
+       SELECT p.id, COALESCE(SUM(GREATEST(0, COALESCE((item->>'stock')::integer, 0))), 0)::integer AS total
+       FROM products p
+       LEFT JOIN LATERAL jsonb_array_elements(p.product_sizes) AS item ON true
+       GROUP BY p.id
+     )
+     UPDATE products p
+     SET stock = inventory_totals.total
+     FROM inventory_totals
+     WHERE p.id = inventory_totals.id AND p.stock IS DISTINCT FROM inventory_totals.total`
+  );
+  await query("UPDATE products SET active = false WHERE stock <= 0 AND active = true");
 }
 
 async function requireSession(req, userType) {
@@ -335,7 +358,8 @@ async function addProductSizeStock(client, productId, size, qty) {
   const product = await client.query("SELECT stock, product_sizes FROM products WHERE id = $1", [productId]);
   if (!product.rows[0]) return;
   const sizes = productSizes(product.rows[0]);
-  const selected = String(size || "").trim().toUpperCase();
+  const requestedSize = String(size || "").trim().toUpperCase();
+  const selected = requestedSize || (sizes.length === 1 && sizes[0].size === "ONE SIZE" ? "ONE SIZE" : "");
   if (sizes.length && selected) {
     const match = sizes.find((item) => item.size === selected);
     if (match) match.stock += amount;
@@ -659,9 +683,10 @@ async function handlePostPutDelete(req, res, method, pathname) {
           const product = productMap.get(String(item.id));
           if (!product) continue;
           const qty = Math.max(1, Number.parseInt(item.qty || 1, 10) || 1);
-          const selectedSize = String(item.size || "").trim().toUpperCase();
+          let selectedSize = String(item.size || "").trim().toUpperCase();
           const sizes = sizeState.get(String(product.id)) || productSizes(product);
           if (!sizeState.has(String(product.id))) sizeState.set(String(product.id), sizes);
+          if (!selectedSize && sizes.length === 1 && sizes[0].size === "ONE SIZE") selectedSize = "ONE SIZE";
           const stock = sizes.length ? productTotalStock(sizes, product.stock) : (stockState.has(String(product.id)) ? stockState.get(String(product.id)) : productTotalStock(sizes, product.stock));
           if (!product.active || stock <= 0) throw Object.assign(new Error(`${product.name} is out of stock`), { status: 409 });
           if (sizes.length) {
@@ -763,6 +788,7 @@ async function handlePostPutDelete(req, res, method, pathname) {
   if (pathname === "/api/admin/products" && method === "POST") {
     const images = productImageList(data);
     const sizes = productSizes(data);
+    const totalStock = productTotalStock(sizes);
     await query(
       `INSERT INTO products
        (category_id, name, price, old_price, badge, rating, stock, product_sizes, image, images, crop, description, ai_type, ai_images, ai_prompts, active, created_at)
@@ -774,7 +800,7 @@ async function handlePostPutDelete(req, res, method, pathname) {
         data.old_price ? Number(data.old_price) : null,
         data.badge || "",
         data.rating || "4.8",
-        productTotalStock(sizes, data.stock),
+        totalStock,
         JSON.stringify(sizes),
         images[0],
         JSON.stringify(images),
@@ -783,7 +809,7 @@ async function handlePostPutDelete(req, res, method, pathname) {
         data.ai_type || "top",
         JSON.stringify(jsonList(data.ai_images)),
         JSON.stringify(jsonList(data.ai_prompts)),
-        toBool(data.active !== undefined ? data.active : true),
+        totalStock > 0,
         now(),
       ]
     );
@@ -827,11 +853,12 @@ async function handlePostPutDelete(req, res, method, pathname) {
     if (method === "PUT") {
       const images = productImageList(data);
       const sizes = productSizes(data);
+      const totalStock = productTotalStock(sizes);
       await query(
         `UPDATE products
          SET category_id=$1, name=$2, price=$3, old_price=$4, badge=$5, rating=$6, stock=$7, product_sizes=$8::jsonb, image=$9, images=$10::jsonb, crop=$11, description=$12, ai_type=$13, ai_images=$14::jsonb, ai_prompts=$15::jsonb, active=$16
          WHERE id=$17`,
-        [Number(data.category_id || 1), data.name || "Product", Math.min(10, Math.max(1, Number(data.price) || 1)), data.old_price ? Number(data.old_price) : null, data.badge || "", data.rating || "4.8", productTotalStock(sizes, data.stock), JSON.stringify(sizes), images[0], JSON.stringify(images), data.crop || "center", data.description || "", data.ai_type || "top", JSON.stringify(jsonList(data.ai_images)), JSON.stringify(jsonList(data.ai_prompts)), toBool(data.active !== undefined ? data.active : true), id]
+        [Number(data.category_id || 1), data.name || "Product", Math.min(10, Math.max(1, Number(data.price) || 1)), data.old_price ? Number(data.old_price) : null, data.badge || "", data.rating || "4.8", totalStock, JSON.stringify(sizes), images[0], JSON.stringify(images), data.crop || "center", data.description || "", data.ai_type || "top", JSON.stringify(jsonList(data.ai_images)), JSON.stringify(jsonList(data.ai_prompts)), totalStock > 0, id]
       );
     }
     if (method === "DELETE") await query("DELETE FROM products WHERE id = $1", [id]);
@@ -896,7 +923,8 @@ async function handlePostPutDelete(req, res, method, pathname) {
         const product = productResult.rows[0];
         if (!product) throw Object.assign(new Error("Product not found"), { status: 404 });
         const sizes = productSizes(product);
-        const itemSize = String(item.size || "").trim().toUpperCase();
+        const requestedItemSize = String(item.size || "").trim().toUpperCase();
+        const itemSize = requestedItemSize || (sizes.length === 1 && sizes[0].size === "ONE SIZE" ? "ONE SIZE" : "");
         if (sizes.length && itemSize) {
           const sizeRow = sizes.find((row) => row.size === itemSize);
           if (stockDelta >= 0) {

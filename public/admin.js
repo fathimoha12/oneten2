@@ -122,7 +122,7 @@ const emptyProduct = {
   badge: "New",
   rating: "4.8",
   stock: "10",
-  product_sizes: [],
+  product_sizes: [{ size: "ONE SIZE", stock: 10 }],
   image: "assets/ai-products.png",
   images: [],
   crop: "center",
@@ -135,14 +135,18 @@ const emptyProduct = {
 
 const commonSizes = ["XS", "S", "M", "L", "XL", "XXL", "28", "30", "32", "34", "36", "38", "40", "42", "One Size"];
 
-function normalizeProductSizes(value) {
+function normalizeProductSizes(value, fallbackStock) {
   const clean = {};
   (Array.isArray(value) ? value : []).forEach((item) => {
     const size = String(item && item.size || "").trim().toUpperCase();
     const stock = Math.max(0, Number(item && item.stock) || 0);
-    if (size && stock > 0) clean[size] = (clean[size] || 0) + stock;
+    if (size) clean[size] = (clean[size] || 0) + stock;
   });
-  return Object.entries(clean).map(([size, stock]) => ({ size, stock }));
+  const rows = Object.entries(clean).map(([size, stock]) => ({ size, stock }));
+  if (rows.length) return rows;
+  return fallbackStock !== undefined && fallbackStock !== null
+    ? [{ size: "ONE SIZE", stock: Math.max(0, Number(fallbackStock) || 0) }]
+    : [];
 }
 
 function formatAdminDate(value) {
@@ -340,8 +344,8 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   function save(event) {
     event.preventDefault();
     const images = getProductImages(form);
-    const productSizes = normalizeProductSizes(form.product_sizes);
-    const body = { ...form, product_sizes: productSizes, stock: productSizes.length ? productSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0) : form.stock, image: images[0], images, category_id: form.category_id || (data.categories[0] && data.categories[0].id) || 1 };
+    const productSizes = normalizeProductSizes(form.product_sizes, form.stock);
+    const body = { ...form, product_sizes: productSizes, stock: productSizes.reduce((sum, item) => sum + Number(item.stock || 0), 0), image: images[0], images, category_id: form.category_id || (data.categories[0] && data.categories[0].id) || 1 };
     const path = editing ? `/api/admin/products/${editing}` : "/api/admin/products";
     adminApi(path, { method: editing ? "PUT" : "POST", body: JSON.stringify(body) })
       .then(() => {
@@ -357,7 +361,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   function edit(product) {
     setSelectedProductId(null);
     setEditing(product.id);
-    setForm({ ...emptyProduct, ...product, product_sizes: normalizeProductSizes(product.product_sizes), image: getProductImages(product)[0], images: getProductImages(product), old_price: product.old_price || "", category_id: product.category_id || "", ai_images: Array.isArray(product.ai_images) ? product.ai_images : [], ai_prompts: Array.isArray(product.ai_prompts) ? product.ai_prompts : [], ai_type: product.ai_type || "top" });
+    setForm({ ...emptyProduct, ...product, product_sizes: normalizeProductSizes(product.product_sizes, product.stock), image: getProductImages(product)[0], images: getProductImages(product), old_price: product.old_price || "", category_id: product.category_id || "", ai_images: Array.isArray(product.ai_images) ? product.ai_images : [], ai_prompts: Array.isArray(product.ai_prompts) ? product.ai_prompts : [], ai_type: product.ai_type || "top" });
     setFormOpen(true);
   }
 
@@ -418,17 +422,22 @@ function ProductsAdmin({ data, refresh, setMessage }) {
       rows[index] = { ...(rows[index] || { size: "", stock: 0 }), [field]: field === "stock" ? Math.max(0, Number(value) || 0) : value };
       const normalized = field === "size" ? rows : rows;
       const total = normalized.reduce((sum, item) => sum + Math.max(0, Number(item.stock) || 0), 0);
-      return { ...current, product_sizes: normalized, stock: String(total || current.stock || 0) };
+      return { ...current, product_sizes: normalized, stock: String(total) };
     });
   }
 
   function addSizeRow(size = "") {
-    setForm((current) => ({ ...current, product_sizes: [...(Array.isArray(current.product_sizes) ? current.product_sizes : []), { size, stock: 1 }] }));
+    setForm((current) => {
+      const rows = [...(Array.isArray(current.product_sizes) ? current.product_sizes : []), { size, stock: 1 }];
+      const total = rows.reduce((sum, item) => sum + Math.max(0, Number(item.stock) || 0), 0);
+      return { ...current, product_sizes: rows, stock: String(total) };
+    });
   }
 
   function removeSizeRow(index) {
     setForm((current) => {
-      const rows = (Array.isArray(current.product_sizes) ? current.product_sizes : []).filter((_, rowIndex) => rowIndex !== index);
+      const remaining = (Array.isArray(current.product_sizes) ? current.product_sizes : []).filter((_, rowIndex) => rowIndex !== index);
+      const rows = remaining.length ? remaining : [{ size: "ONE SIZE", stock: 0 }];
       const total = rows.reduce((sum, item) => sum + Math.max(0, Number(item.stock) || 0), 0);
       return { ...current, product_sizes: rows, stock: String(total || 0) };
     });
@@ -438,12 +447,12 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   const publicProducts = (data.products || []).filter((product) => Number(product.active) === 1 && Number(product.stock || 0) > 0);
   const inactiveProducts = (data.products || []).filter((product) => Number(product.active) !== 1 || Number(product.stock || 0) <= 0);
   const currentProducts = productView === "active" ? publicProducts : inactiveProducts;
-  const formSizeRows = normalizeProductSizes(form.product_sizes);
+  const formSizeRows = normalizeProductSizes(form.product_sizes, form.stock);
   const formSizeTotal = formSizeRows.reduce((sum, item) => sum + Number(item.stock || 0), 0);
   const normalizedQuery = productQuery.trim().toLowerCase();
   const visibleProducts = currentProducts.filter((product) => {
     if (!normalizedQuery) return true;
-    const sizeSummary = normalizeProductSizes(product.product_sizes).map((item) => `${item.size} ${item.stock}`).join(" ");
+    const sizeSummary = normalizeProductSizes(product.product_sizes, product.stock).map((item) => `${item.size} ${item.stock}`).join(" ");
     return [product.name, product.category, product.description, product.badge, product.ai_type, sizeSummary]
       .filter(Boolean)
       .some((value) => String(value).toLowerCase().includes(normalizedQuery));
@@ -451,15 +460,17 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   const selectedProduct = selectedProductId ? (data.products || []).find((product) => String(product.id) === String(selectedProductId)) : null;
 
   function ProductRow(product) {
-    const isPublic = Number(product.active) === 1 && Number(product.stock || 0) > 0;
-    const sizeText = normalizeProductSizes(product.product_sizes).map((item) => `${item.size}:${item.stock}`).join(" / ");
+    const inventoryRows = normalizeProductSizes(product.product_sizes, product.stock);
+    const inventoryTotal = inventoryRows.reduce((sum, item) => sum + Number(item.stock || 0), 0);
+    const isPublic = Number(product.active) === 1 && inventoryTotal > 0;
+    const sizeText = inventoryRows.map((item) => `${item.size}:${item.stock}`).join(" / ");
     return React.createElement("article", { className: `admin-row admin-row-clickable ${isPublic ? "is-public" : "is-inactive"}`, key: product.id, onClick: () => setSelectedProductId(product.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedProductId(product.id); }, role: "button", tabIndex: 0 },
       React.createElement("img", { src: getProductImages(product)[0], alt: product.name, style: { objectPosition: product.crop || "center" } }),
       React.createElement("div", null,
         React.createElement("strong", null, product.name),
-        React.createElement("span", null, `${product.category} / $${product.price} / Stock ${product.stock} / ${getProductImages(product).length} images`),
+        React.createElement("span", null, `${product.category} / $${product.price} / Stock ${inventoryTotal} / ${getProductImages(product).length} images`),
         sizeText && React.createElement("span", { className: "admin-size-summary" }, sizeText),
-        React.createElement("em", { className: isPublic ? "product-state public" : "product-state inactive" }, isPublic ? "Public / Active" : Number(product.stock || 0) <= 0 ? "Inactive / Stock finished" : "Inactive / Hidden"),
+        React.createElement("em", { className: isPublic ? "product-state public" : "product-state inactive" }, isPublic ? "Public / Active" : inventoryTotal <= 0 ? "Inactive / Stock finished" : "Inactive / Hidden"),
         (product.ai_prompts || []).length > 0 && React.createElement("em", { className: "product-state ai-ready" }, `AI ${product.ai_type || "style"} ready`)
       ),
       React.createElement("button", { onClick: (event) => { event.stopPropagation(); edit(product); }, type: "button" }, "Edit"),
@@ -478,7 +489,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
       React.createElement("input", { required: true, value: form.name, onChange: (event) => setForm({ ...form, name: event.target.value }), placeholder: "Product name" }),
       React.createElement("select", { value: form.category_id, onChange: (event) => setForm({ ...form, category_id: event.target.value }) }, React.createElement("option", { value: "" }, "Choose category"), data.categories.map((cat) => React.createElement("option", { key: cat.id, value: cat.id }, cat.name))),
       React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.price, onChange: (event) => setForm({ ...form, price: event.target.value }), placeholder: "Price 1-10" }), React.createElement("input", { value: form.old_price || "", onChange: (event) => setForm({ ...form, old_price: event.target.value }), placeholder: "Old price" })),
-      React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.badge || "", onChange: (event) => setForm({ ...form, badge: event.target.value }), placeholder: "Badge" }), React.createElement("input", { readOnly: formSizeRows.length > 0, value: formSizeRows.length ? formSizeTotal : form.stock, onChange: (event) => setForm({ ...form, stock: event.target.value }), placeholder: "Total stock" })),
+      React.createElement("div", { className: "two-col" }, React.createElement("input", { value: form.badge || "", onChange: (event) => setForm({ ...form, badge: event.target.value }), placeholder: "Badge" }), React.createElement("input", { "aria-label": "Total stock calculated from sizes", readOnly: true, title: "Calculated from size quantities", value: formSizeTotal, placeholder: "Total stock" })),
       React.createElement("div", { className: "size-stock-builder" },
         React.createElement("div", { className: "size-stock-head" },
           React.createElement("div", null, React.createElement("strong", null, "Size Stock"), React.createElement("span", null, "Dooro size kasta iyo inta ka taalla")),
@@ -493,7 +504,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
           ),
           React.createElement("input", { min: "0", onChange: (event) => updateSizeRow(index, "stock", event.target.value), placeholder: "Qty", type: "number", value: item.stock }),
           React.createElement("button", { onClick: () => removeSizeRow(index), type: "button" }, "Remove")
-        )) : React.createElement("p", { className: "size-stock-empty" }, "Haddii product-ku leeyahay size, halkan ku dar. Haddii kale total stock-ka kore ayaa la isticmaalayaa.")
+        )) : React.createElement("p", { className: "size-stock-empty" }, "Add at least one size. Use ONE SIZE for products without size variants.")
       ),
       React.createElement("label", { className: "file-picker" }, "Choose product images",
         React.createElement("input", { accept: "image/*", multiple: true, onChange: chooseFile, type: "file" })
@@ -535,10 +546,11 @@ function ProductsAdmin({ data, refresh, setMessage }) {
 
 function ProductDetailDrawer({ product, onClose, onEdit }) {
   const images = getProductImages(product);
-  const sizes = normalizeProductSizes(product.product_sizes);
+  const sizes = normalizeProductSizes(product.product_sizes, product.stock);
+  const totalStock = sizes.reduce((sum, item) => sum + Number(item.stock || 0), 0);
   const [activeImage, setActiveImage] = useState(images[0]);
   useEffect(() => setActiveImage(images[0]), [product.id, images[0]]);
-  const isPublic = Number(product.active) === 1 && Number(product.stock || 0) > 0;
+  const isPublic = Number(product.active) === 1 && totalStock > 0;
 
   return React.createElement(React.Fragment, null,
     React.createElement("button", { "aria-label": "Close product details", className: "admin-drawer-backdrop", onClick: onClose, type: "button" }),
@@ -558,12 +570,12 @@ function ProductDetailDrawer({ product, onClose, onEdit }) {
         ),
         React.createElement("div", { className: "drawer-metrics" },
           React.createElement("div", null, React.createElement("span", null, "Price"), React.createElement("strong", null, `$${Number(product.price || 0).toFixed(2)}`)),
-          React.createElement("div", null, React.createElement("span", null, "Total stock"), React.createElement("strong", null, Number(product.stock || 0))),
+          React.createElement("div", null, React.createElement("span", null, "Total stock"), React.createElement("strong", null, totalStock)),
           React.createElement("div", null, React.createElement("span", null, "Images"), React.createElement("strong", null, images.length)),
           React.createElement("div", null, React.createElement("span", null, "Rating"), React.createElement("strong", null, product.rating || "4.8"))
         ),
         React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Inventory by size"),
-          sizes.length ? React.createElement("div", { className: "drawer-size-grid" }, sizes.map((item) => React.createElement("div", { key: item.size }, React.createElement("strong", null, item.size), React.createElement("span", null, `${item.stock} available`)))) : React.createElement("p", null, `No size variants. General stock: ${Number(product.stock || 0)}.`)
+          React.createElement("div", { className: "drawer-size-grid" }, sizes.map((item) => React.createElement("div", { className: Number(item.stock || 0) > 0 ? "" : "sold-out", key: item.size }, React.createElement("strong", null, item.size), React.createElement("span", null, Number(item.stock || 0) > 0 ? `${item.stock} available` : "Sold out"))))
         ),
         React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Description"), React.createElement("p", null, product.description || "No product description added.")),
         React.createElement("dl", { className: "drawer-details-list" },
