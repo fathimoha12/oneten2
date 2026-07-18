@@ -295,12 +295,33 @@ function App() {
 
   useEffect(() => {
     let active = true;
+    let finishTimer;
+    const startedAt = Date.now();
+    let loaderSeen = false;
+    try {
+      loaderSeen = sessionStorage.getItem("oneTenLoaderSeen") === "1";
+    } catch {
+      loaderSeen = false;
+    }
+    const minimumDuration = loaderSeen ? 0 : 850;
     loadPublic().finally(() => {
-      if (active) setBootLoading(false);
+      const finishLoading = () => {
+        if (!active) return;
+        try {
+          sessionStorage.setItem("oneTenLoaderSeen", "1");
+        } catch {
+          // The loader still works when private browsing blocks session storage.
+        }
+        setBootLoading(false);
+      };
+      const remaining = Math.max(0, minimumDuration - (Date.now() - startedAt));
+      if (remaining > 0) finishTimer = window.setTimeout(finishLoading, remaining);
+      else finishLoading();
     });
     loadCustomer();
     return () => {
       active = false;
+      if (finishTimer) window.clearTimeout(finishTimer);
     };
   }, []);
 

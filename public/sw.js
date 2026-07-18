@@ -1,4 +1,4 @@
-const CACHE_VERSION = "one-ten-v20260718-9";
+const CACHE_VERSION = "one-ten-v20260718-10";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -10,6 +10,10 @@ const CORE_ASSETS = [
   "/config.js",
   "/manifest.json",
   "/offline.html",
+  "/favicon.ico",
+  "/icons/apple-touch-icon.png",
+  "/icons/icon-192.png",
+  "/icons/icon-512.png",
   "/assets/logo-red.png",
   "/assets/logo-white.png",
   "/assets/ai-hero.png",
