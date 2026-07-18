@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/store-utils.test.js"
+    "test": "node tests/run-tests.js"
   },
   "dependencies": {
     "next": "^15.5.16",

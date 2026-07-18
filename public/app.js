@@ -64,6 +64,29 @@ function getProductImages(product) {
   return clean.length ? clean : [assets.products];
 }
 
+function panelImageInfo(value) {
+  const source = String(value || "");
+  const match = source.match(/#panel=([1-4])$/);
+  if (!match) return null;
+  const panel = Number(match[1]);
+  return {
+    source: source.replace(/#panel=[1-4]$/, ""),
+    x: (panel - 1) % 2,
+    y: Math.floor((panel - 1) / 2),
+  };
+}
+
+function ProductVisual({ src, alt, className = "", style = {}, loading = "lazy", decoding = "async" }) {
+  const panel = panelImageInfo(src);
+  if (!panel) return React.createElement("img", { src, alt, className, style, loading, decoding });
+  return React.createElement("span", {
+    "aria-label": alt,
+    className: `panel-image ${className}`.trim(),
+    role: "img",
+    style: { ...style, "--panel-x": panel.x, "--panel-y": panel.y },
+  }, React.createElement("img", { alt: "", decoding, loading, src: panel.source }));
+}
+
 function getProductSizes(product) {
   const source = Array.isArray(product && product.product_sizes) ? product.product_sizes : [];
   const available = source
@@ -507,7 +530,7 @@ function HomePage({ ads, products, categories, addToCart, navigate, settings }) 
       ),
       React.createElement("div", { className: "hero-media" },
         React.createElement("button", { className: "hero-arrow prev", onClick: prevAd, type: "button", "aria-label": "Previous ad" }, "‹"),
-        React.createElement("img", { src: ad.image, alt: ad.title }),
+        React.createElement(ProductVisual, { src: ad.image, alt: ad.title, className: "hero-product-visual", loading: "eager" }),
         React.createElement("button", { className: "hero-arrow next", onClick: nextAd, type: "button", "aria-label": "Next ad" }, "›")
       )
     ),
@@ -622,7 +645,7 @@ function ProductCard({ product, settings = {}, view = "grid", addToCart, navigat
       React.createElement("a", { className: "product-card-link", href: `/product/${product.id}`, "aria-label": `View ${product.name}` }),
       product.badge && React.createElement("span", { className: "badge" }, product.badge),
       settings.product_badge_logo && React.createElement("span", { className: "product-badge-logo" }, React.createElement("img", { src: settings.product_badge_logo, alt: "ONE TEN badge" })),
-      React.createElement("img", { src: mainImage, alt: product.name, decoding: "async", loading: "lazy", style: { objectPosition: product.crop || "center" } }),
+      React.createElement(ProductVisual, { src: mainImage, alt: product.name, className: "product-card-visual", style: { objectPosition: product.crop || "center" } }),
       React.createElement("div", { className: "hover-actions" }, React.createElement("button", { onClick: (event) => { event.stopPropagation(); navigate("product/" + product.id); }, type: "button" }, "View"), React.createElement("button", { onClick: (event) => { event.stopPropagation(); needsSize ? navigate("product/" + product.id) : addToCart(product); }, type: "button" }, needsSize ? "Choose Size" : "Add to Cart"))
     ),
     React.createElement("div", { className: "product-content" }, React.createElement("span", { className: "category" }, product.category), React.createElement("h3", null, React.createElement("a", { href: `/product/${product.id}`, onClick: (event) => event.stopPropagation() }, product.name)), React.createElement("div", { className: "rating" }, React.createElement("span", null, "Rating"), React.createElement("strong", null, product.rating || "4.8"), React.createElement("em", null, "Review(s)")), React.createElement("div", { className: "price" }, React.createElement("strong", null, `$${Number(product.price).toFixed(2)}`), product.old_price && React.createElement("del", null, `$${Number(product.old_price).toFixed(2)}`)))
@@ -706,8 +729,8 @@ function ProductPage({ product, products = [], settings = {}, addToCart, addMany
     .slice(0, 4);
   const related = relatedByCategory.length ? relatedByCategory : products.filter((item) => String(item.id) !== String(currentProduct.id)).slice(0, 4);
   return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: currentProduct.name, trail: `Home / Shop / ${currentProduct.name}` }), React.createElement("main", { className: "detail-page" }, React.createElement("div", { className: "detail-media" },
-    React.createElement("img", { src: activeImage || images[0], alt: currentProduct.name, decoding: "async", loading: "eager", style: { objectPosition: currentProduct.crop || "center" } }),
-    images.length > 1 && React.createElement("div", { className: "detail-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement("img", { src: image, alt: `${currentProduct.name} ${index + 1}`, decoding: "async", loading: "lazy" }))))
+    React.createElement(ProductVisual, { src: activeImage || images[0], alt: currentProduct.name, className: "detail-product-visual", loading: "eager", style: { objectPosition: currentProduct.crop || "center" } }),
+    images.length > 1 && React.createElement("div", { className: "detail-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement(ProductVisual, { src: image, alt: `${currentProduct.name} ${index + 1}`, className: "detail-thumb-visual" }))))
   ), React.createElement("div", { className: "detail-info" }, React.createElement("p", { className: "eyebrow" }, currentProduct.category), React.createElement("h2", null, currentProduct.name), React.createElement("p", null, currentProduct.description), React.createElement("div", { className: "price detail-price" }, React.createElement("strong", null, `$${Number(currentProduct.price).toFixed(2)}`), currentProduct.old_price && React.createElement("del", null, `$${Number(currentProduct.old_price).toFixed(2)}`)),
     availableSizes.length > 0 && React.createElement("div", { className: "size-picker multi-size-picker" },
       React.createElement("div", { className: "size-picker-head" }, React.createElement("div", null, React.createElement("strong", null, "Choose one or more sizes"), React.createElement("small", null, "Size kasta qty u gaar ah dooro")), React.createElement("span", null, selectedLines.length ? `${selectedLines.length} sizes / ${selectedPieces} pieces` : "No size selected")),
@@ -786,7 +809,7 @@ function CartPage({ cart, setCart, total, navigate }) {
       message && React.createElement("p", { className: "stock-message cart-stock-message" }, message),
       cart.map((item) => React.createElement("article", { className: "cart-item", key: cartKey(item) },
         React.createElement("span", { className: "cart-check" }, React.createElement(Icon, { name: "check" })),
-        React.createElement("img", { src: item.image, alt: item.name, style: { objectPosition: item.crop || "center" } }),
+        React.createElement(ProductVisual, { src: item.image, alt: item.name, className: "cart-product-visual", style: { objectPosition: item.crop || "center" } }),
         React.createElement("div", null,
           React.createElement("h3", null, item.name),
           React.createElement("p", null, `$${Number(item.price).toFixed(2)}`, item.old_price && React.createElement("del", null, `$${Number(item.old_price).toFixed(2)}`)),
@@ -853,7 +876,7 @@ function CheckoutPage({ cart, total, customer, setCart, navigate, settings }) {
       });
   }
 
-  return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: "Checkout" }), React.createElement("section", { className: "content-page checkout-grid" }, React.createElement("form", { className: "form-card", onSubmit: submit }, React.createElement("h2", null, "Billing Details"), message && React.createElement("p", { className: "form-message" }, message), React.createElement("input", { disabled: true, value: customer.name }), React.createElement("input", { placeholder: "Phone number", required: true, value: form.phone, onChange: (event) => setForm({ ...form, phone: event.target.value }) }), React.createElement("textarea", { placeholder: "Delivery address", value: form.address, onChange: (event) => setForm({ ...form, address: event.target.value }) }), React.createElement("button", { disabled: cart.length === 0, type: "submit" }, "Place Order")), React.createElement("aside", { className: "summary checkout-summary" }, React.createElement("h3", null, "Order Summary"), React.createElement("div", { className: "checkout-products-grid" }, cart.map((item) => React.createElement("div", { className: "checkout-product-mini", key: cartKey(item) }, React.createElement("img", { src: item.image, alt: item.name }), React.createElement("span", null, item.size ? `${item.name} / ${item.size}` : item.name), React.createElement("strong", null, `x${item.qty}`)))), React.createElement("p", null, `${cart.length} product lines`), React.createElement("strong", null, `$${total.toFixed(2)}`), React.createElement("button", { className: "btn ghost", onClick: () => navigate("cart") }, "Back to cart"))));
+  return React.createElement(React.Fragment, null, React.createElement(Breadcrumb, { title: "Checkout" }), React.createElement("section", { className: "content-page checkout-grid" }, React.createElement("form", { className: "form-card", onSubmit: submit }, React.createElement("h2", null, "Billing Details"), message && React.createElement("p", { className: "form-message" }, message), React.createElement("input", { disabled: true, value: customer.name }), React.createElement("input", { placeholder: "Phone number", required: true, value: form.phone, onChange: (event) => setForm({ ...form, phone: event.target.value }) }), React.createElement("textarea", { placeholder: "Delivery address", value: form.address, onChange: (event) => setForm({ ...form, address: event.target.value }) }), React.createElement("button", { disabled: cart.length === 0, type: "submit" }, "Place Order")), React.createElement("aside", { className: "summary checkout-summary" }, React.createElement("h3", null, "Order Summary"), React.createElement("div", { className: "checkout-products-grid" }, cart.map((item) => React.createElement("div", { className: "checkout-product-mini", key: cartKey(item) }, React.createElement(ProductVisual, { src: item.image, alt: item.name, className: "checkout-product-visual" }), React.createElement("span", null, item.size ? `${item.name} / ${item.size}` : item.name), React.createElement("strong", null, `x${item.qty}`)))), React.createElement("p", null, `${cart.length} product lines`), React.createElement("strong", null, `$${total.toFixed(2)}`), React.createElement("button", { className: "btn ghost", onClick: () => navigate("cart") }, "Back to cart"))));
 }
 
 function ProfilePage({ customer, navigate, logout }) {
@@ -913,7 +936,7 @@ function OrderHistoryPage({ customer, navigate }) {
         React.createElement("div", { className: "history-items" },
           React.createElement("div", { className: "history-meta" }, React.createElement("strong", null, `Order #${order.id}`), React.createElement("span", null, order.status || "Processing")),
           (order.order_items || []).slice(0, 3).map((item) => React.createElement("div", { className: "history-item", key: item.id },
-            React.createElement("img", { src: item.product_image || assets.products, alt: item.product_name }),
+            React.createElement(ProductVisual, { src: item.product_image || assets.products, alt: item.product_name, className: "history-product-visual" }),
             React.createElement("div", null, React.createElement("h3", null, item.product_name), React.createElement("p", null, item.size ? `$${Number(item.price).toFixed(2)} / Size ${item.size}` : `$${Number(item.price).toFixed(2)}`)),
             React.createElement("span", null, `x${item.qty}`)
           ))

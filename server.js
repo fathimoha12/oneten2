@@ -4,6 +4,7 @@ const http = require("http");
 const path = require("path");
 const zlib = require("zlib");
 const { Pool } = require("pg");
+const { CATALOG_ADS, CATALOG_BATCH, CATALOG_CATEGORIES, CATALOG_PRODUCTS } = require("./lib/catalog-seed");
 
 const ROOT = __dirname;
 const PORT = Number(process.env.PORT || 4181);
@@ -276,7 +277,33 @@ async function initDb() {
 async function ensureRuntimeSchema() {
   await query("SELECT 1");
   await query("ALTER TABLE products ADD COLUMN IF NOT EXISTS product_sizes jsonb DEFAULT '[]'::jsonb");
+  await query("ALTER TABLE products ADD COLUMN IF NOT EXISTS seed_batch text DEFAULT ''");
+  await query("ALTER TABLE categories ADD COLUMN IF NOT EXISTS seed_batch text DEFAULT ''");
+  await query("ALTER TABLE ads ADD COLUMN IF NOT EXISTS seed_batch text DEFAULT ''");
   await query("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS size text DEFAULT ''");
+  await query("ALTER TABLE order_items ALTER COLUMN product_id DROP NOT NULL");
+  await query(
+    `DO $$
+     BEGIN
+       IF EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conname = 'order_items_product_id_fkey'
+           AND conrelid = 'order_items'::regclass
+           AND confdeltype <> 'n'
+       ) THEN
+         ALTER TABLE order_items DROP CONSTRAINT order_items_product_id_fkey;
+       END IF;
+       IF NOT EXISTS (
+         SELECT 1 FROM pg_constraint
+         WHERE conname = 'order_items_product_id_fkey'
+           AND conrelid = 'order_items'::regclass
+       ) THEN
+         ALTER TABLE order_items
+           ADD CONSTRAINT order_items_product_id_fkey
+           FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE SET NULL;
+       END IF;
+     END $$`
+  );
   await query(
     `UPDATE products
      SET product_sizes = jsonb_build_array(jsonb_build_object('size', 'ONE SIZE', 'stock', GREATEST(COALESCE(stock, 0), 0)))
@@ -379,6 +406,65 @@ async function recalcOrder(client, orderId) {
   if (!items.rows.length || !activeItems.length) status = "Cancelled";
   else if (activeItems.every((item) => item.status === "Approved")) status = "Approved";
   await client.query("UPDATE orders SET total = $1, status = $2 WHERE id = $3", [Number(total.rows[0].total || 0), status, orderId]);
+}
+
+async function installCatalogSeed(client) {
+  const categoryIds = new Map();
+  await client.query("DELETE FROM products WHERE seed_batch = $1", [CATALOG_BATCH]);
+  await client.query("DELETE FROM ads WHERE seed_batch = $1", [CATALOG_BATCH]);
+
+  for (const category of CATALOG_CATEGORIES) {
+    const result = await client.query(
+      `INSERT INTO categories (name, description, price_mode, sort_order, seed_batch, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (name) DO UPDATE SET
+         description = EXCLUDED.description,
+         price_mode = EXCLUDED.price_mode,
+         sort_order = EXCLUDED.sort_order,
+         seed_batch = CASE WHEN categories.seed_batch = '' THEN EXCLUDED.seed_batch ELSE categories.seed_batch END
+       RETURNING id`,
+      [category.name, category.description, category.price_mode, category.sort_order, CATALOG_BATCH, now()]
+    );
+    categoryIds.set(category.key, result.rows[0].id);
+  }
+
+  for (const product of CATALOG_PRODUCTS) {
+    await client.query(
+      `INSERT INTO products
+       (category_id, name, price, old_price, badge, rating, stock, product_sizes, image, images, crop, description, ai_type, ai_images, ai_prompts, active, seed_batch, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10::jsonb,$11,$12,$13,$14::jsonb,$15::jsonb,$16,$17,$18)`,
+      [
+        categoryIds.get(product.category_key),
+        product.name,
+        product.price,
+        product.old_price,
+        product.badge,
+        product.rating,
+        product.stock,
+        JSON.stringify(product.product_sizes),
+        product.image,
+        JSON.stringify(product.images),
+        product.crop,
+        product.description,
+        product.ai_type,
+        JSON.stringify(product.ai_images),
+        JSON.stringify(product.ai_prompts),
+        product.stock > 0,
+        CATALOG_BATCH,
+        now(),
+      ]
+    );
+  }
+
+  for (const ad of CATALOG_ADS) {
+    await client.query(
+      `INSERT INTO ads (title, subtitle, button_text, link, image, active, sort_order, seed_batch, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [ad.title, ad.subtitle, ad.button_text, ad.link, ad.image, ad.active, ad.sort_order, CATALOG_BATCH, now()]
+    );
+  }
+
+  return { products: CATALOG_PRODUCTS.length, categories: CATALOG_CATEGORIES.length, ads: CATALOG_ADS.length };
 }
 
 const aiTypeLabels = {
@@ -606,6 +692,7 @@ async function handleGet(req, res, pathname) {
         subscribers: payload.subscribers.length,
         revenue: Number(revenue.rows[0].total || 0),
         lowStock: payload.products.filter((product) => Number(product.stock || 0) <= 12).length,
+        seededProducts: payload.products.filter((product) => product.seed_batch === CATALOG_BATCH).length,
       };
       return sendJson(req, res, 200, payload);
     }
@@ -747,6 +834,46 @@ async function handlePostPutDelete(req, res, method, pathname) {
 
   const admin = pathname.startsWith("/api/admin/") ? await requireSession(req, "admin") : null;
   if (pathname.startsWith("/api/admin/") && !admin) return sendJson(req, res, 401, { error: "Admin login required" });
+
+  if (pathname === "/api/admin/catalog/install" && method === "POST") {
+    return withClient(async (client) => {
+      await client.query("BEGIN");
+      try {
+        const counts = await installCatalogSeed(client);
+        await client.query("COMMIT");
+        return sendJson(req, res, 201, { ok: true, counts, message: "40-product AI catalog installed" });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        return sendJson(req, res, 500, { error: error.message || "Catalog install failed" });
+      }
+    });
+  }
+
+  if (pathname === "/api/admin/catalog/seed" && method === "DELETE") {
+    return withClient(async (client) => {
+      await client.query("BEGIN");
+      try {
+        const products = await client.query("DELETE FROM products WHERE seed_batch = $1 RETURNING id", [CATALOG_BATCH]);
+        const ads = await client.query("DELETE FROM ads WHERE seed_batch = $1 RETURNING id", [CATALOG_BATCH]);
+        await client.query(
+          `DELETE FROM categories c
+           WHERE c.seed_batch = $1
+             AND NOT EXISTS (SELECT 1 FROM products p WHERE p.category_id = c.id)`,
+          [CATALOG_BATCH]
+        );
+        await client.query("COMMIT");
+        return sendJson(req, res, 200, { ok: true, products: products.rowCount, ads: ads.rowCount, message: "AI seed catalog cleared" });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        return sendJson(req, res, 500, { error: error.message || "Catalog clear failed" });
+      }
+    });
+  }
+
+  if (pathname === "/api/admin/catalog/products" && method === "DELETE") {
+    const removed = await query("DELETE FROM products RETURNING id");
+    return sendJson(req, res, 200, { ok: true, products: removed.rowCount, message: "All products cleared; order history was preserved" });
+  }
 
   if (pathname === "/api/admin/profile" && method === "PUT") {
     const nextUsername = String(data.username || "").trim();

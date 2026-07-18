@@ -60,6 +60,29 @@ function getProductImages(product) {
   return clean.length ? clean : ["assets/ai-products.png"];
 }
 
+function panelImageInfo(value) {
+  const source = String(value || "");
+  const match = source.match(/#panel=([1-4])$/);
+  if (!match) return null;
+  const panel = Number(match[1]);
+  return {
+    source: source.replace(/#panel=[1-4]$/, ""),
+    x: (panel - 1) % 2,
+    y: Math.floor((panel - 1) / 2),
+  };
+}
+
+function ProductVisual({ src, alt, className = "", style = {}, loading = "lazy", decoding = "async" }) {
+  const panel = panelImageInfo(src);
+  if (!panel) return React.createElement("img", { src, alt, className, style, loading, decoding });
+  return React.createElement("span", {
+    "aria-label": alt,
+    className: `panel-image ${className}`.trim(),
+    role: "img",
+    style: { ...style, "--panel-x": panel.x, "--panel-y": panel.y },
+  }, React.createElement("img", { alt: "", decoding, loading, src: panel.source }));
+}
+
 function readImageFiles(files, options = {}) {
   const maxSize = options.maxSize || 1000;
   const quality = options.quality || 0.72;
@@ -240,7 +263,7 @@ function AdminApp() {
   return React.createElement("div", { className: "admin-shell" },
     React.createElement("aside", { className: "admin-sidebar" },
       React.createElement("img", { src: data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png", alt: "ONE TEN" }),
-      [["dashboard", "Dashboard"], ["products", "Products"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
+      [["dashboard", "Dashboard"], ["products", "Products"], ["catalog", "Catalog Tools"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
         React.createElement("button", { className: tab === id ? "active" : "", key: id, onClick: () => setTab(id), type: "button" }, label)
       ),
       React.createElement("a", { href: "/" }, "Public Website"),
@@ -265,6 +288,7 @@ function AdminApp() {
       message && React.createElement("div", { className: "admin-message" }, message),
       tab === "dashboard" && React.createElement(DashboardHome, { data, setTab }),
       tab === "products" && React.createElement(ProductsAdmin, { data, refresh, setMessage }),
+      tab === "catalog" && React.createElement(CatalogTools, { data, refresh, setMessage }),
       tab === "categories" && React.createElement(CategoriesAdmin, { data, refresh, setMessage }),
       tab === "ads" && React.createElement(AdsAdmin, { data, refresh, setMessage }),
       tab === "about" && React.createElement(AboutAdmin, { data, refresh, setMessage }),
@@ -314,7 +338,7 @@ function DashboardHome({ data, setTab }) {
       React.createElement("article", { className: "dashboard-panel" },
         React.createElement("div", { className: "panel-head" }, React.createElement("strong", null, "Quick Actions"), React.createElement("span", null, "Admin tools")),
         React.createElement("div", { className: "quick-actions" },
-          [["products", "Products"], ["orders", "Orders"], ["ads", "Landing Ads"], ["settings", "Settings"]].map(([id, label]) =>
+          [["products", "Products"], ["catalog", "Catalog Tools"], ["orders", "Orders"], ["ads", "Landing Ads"]].map(([id, label]) =>
             React.createElement("button", { key: id, onClick: () => setTab(id), type: "button" }, label)
           )
         )
@@ -326,6 +350,61 @@ function DashboardHome({ data, setTab }) {
             React.createElement("span", null, `#${order.id} ${order.customer_name || "Customer"}`),
             React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)
           )) : React.createElement("p", null, "No orders yet")
+        )
+      )
+    )
+  );
+}
+
+function CatalogTools({ data, refresh, setMessage }) {
+  const [busy, setBusy] = useState("");
+  const [confirmClear, setConfirmClear] = useState(false);
+  const seeded = Number(data.dashboard && data.dashboard.seededProducts || 0);
+
+  function runCatalogAction(action, path, method) {
+    setBusy(action);
+    adminApi(path, { method, body: method === "POST" ? JSON.stringify({}) : undefined })
+      .then((payload) => {
+        setMessage(payload.message || "Catalog updated");
+        setConfirmClear(false);
+        refresh();
+      })
+      .catch((error) => setMessage(error.message))
+      .finally(() => setBusy(""));
+  }
+
+  return React.createElement("section", { className: "catalog-tools" },
+    React.createElement("header", { className: "catalog-tools-head" },
+      React.createElement("div", null, React.createElement("span", null, "ONE TEN AI inventory"), React.createElement("h2", null, "Catalog Control Center"), React.createElement("p", null, "Install or clear the full product catalog in one controlled action.")),
+      React.createElement("a", { className: "catalog-sql-link", href: "/supabase_catalog_seed_40.sql", target: "_blank" }, "Open SQL Seed")
+    ),
+    React.createElement("div", { className: "catalog-metrics" },
+      React.createElement("div", null, React.createElement("span", null, "AI products ready"), React.createElement("strong", null, "40")),
+      React.createElement("div", null, React.createElement("span", null, "Catalog categories"), React.createElement("strong", null, "9")),
+      React.createElement("div", null, React.createElement("span", null, "Landing ads"), React.createElement("strong", null, "4")),
+      React.createElement("div", null, React.createElement("span", null, "Installed seed products"), React.createElement("strong", null, seeded))
+    ),
+    React.createElement("div", { className: "catalog-actions" },
+      React.createElement("article", { className: "catalog-action primary-action" },
+        React.createElement("span", { className: "catalog-action-number" }, "01"),
+        React.createElement("h3", null, seeded ? "Refresh AI Catalog" : "Install AI Catalog"),
+        React.createElement("p", null, "Adds 40 products with four-view galleries, stock by size, nine categories and four landing ads. Existing manually added products stay untouched."),
+        React.createElement("button", { disabled: !!busy, onClick: () => runCatalogAction("install", "/api/admin/catalog/install", "POST"), type: "button" }, busy === "install" ? "Installing..." : seeded ? "Refresh 40 Products" : "Install 40 Products")
+      ),
+      React.createElement("article", { className: "catalog-action" },
+        React.createElement("span", { className: "catalog-action-number" }, "02"),
+        React.createElement("h3", null, "Clear AI Seed"),
+        React.createElement("p", null, "Removes only products and landing ads installed by the AI catalog tool. Manual products and order history remain safe."),
+        React.createElement("button", { className: "catalog-secondary", disabled: !!busy || seeded === 0, onClick: () => runCatalogAction("seed", "/api/admin/catalog/seed", "DELETE"), type: "button" }, busy === "seed" ? "Clearing..." : "Clear AI Seed")
+      ),
+      React.createElement("article", { className: "catalog-action danger-action" },
+        React.createElement("span", { className: "catalog-action-number" }, "03"),
+        React.createElement("h3", null, "Clear All Products"),
+        React.createElement("p", null, "Removes every product in one action while preserving customer and order history snapshots."),
+        !confirmClear ? React.createElement("button", { className: "catalog-danger", disabled: !!busy || !(data.products || []).length, onClick: () => setConfirmClear(true), type: "button" }, "Clear All Products") : React.createElement("div", { className: "catalog-confirm" },
+          React.createElement("strong", null, `Remove all ${(data.products || []).length} products?`),
+          React.createElement("button", { className: "catalog-danger", disabled: !!busy, onClick: () => runCatalogAction("all", "/api/admin/catalog/products", "DELETE"), type: "button" }, busy === "all" ? "Clearing..." : "Yes, Clear Everything"),
+          React.createElement("button", { className: "catalog-cancel", disabled: !!busy, onClick: () => setConfirmClear(false), type: "button" }, "Cancel")
         )
       )
     )
@@ -465,7 +544,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
     const isPublic = Number(product.active) === 1 && inventoryTotal > 0;
     const sizeText = inventoryRows.map((item) => `${item.size}:${item.stock}`).join(" / ");
     return React.createElement("article", { className: `admin-row admin-row-clickable ${isPublic ? "is-public" : "is-inactive"}`, key: product.id, onClick: () => setSelectedProductId(product.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedProductId(product.id); }, role: "button", tabIndex: 0 },
-      React.createElement("img", { src: getProductImages(product)[0], alt: product.name, style: { objectPosition: product.crop || "center" } }),
+      React.createElement(ProductVisual, { src: getProductImages(product)[0], alt: product.name, className: "admin-row-product-visual", style: { objectPosition: product.crop || "center" } }),
       React.createElement("div", null,
         React.createElement("strong", null, product.name),
         React.createElement("span", null, `${product.category} / $${product.price} / Stock ${inventoryTotal} / ${getProductImages(product).length} images`),
@@ -509,7 +588,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
       React.createElement("label", { className: "file-picker" }, "Choose product images",
         React.createElement("input", { accept: "image/*", multiple: true, onChange: chooseFile, type: "file" })
       ),
-      previewImages.length > 0 && React.createElement("div", { className: "admin-image-preview" }, previewImages.map((image, index) => React.createElement("button", { key: `${image}-${index}`, onClick: () => removeImage(index), title: "Remove image", type: "button" }, React.createElement("img", { src: image, alt: `Product image ${index + 1}` }), React.createElement("span", null, index === 0 ? "Main" : "Alt")))),
+      previewImages.length > 0 && React.createElement("div", { className: "admin-image-preview" }, previewImages.map((image, index) => React.createElement("button", { key: `${image}-${index}`, onClick: () => removeImage(index), title: "Remove image", type: "button" }, React.createElement(ProductVisual, { src: image, alt: `Product image ${index + 1}`, className: "admin-preview-product-visual" }), React.createElement("span", null, index === 0 ? "Main" : "Alt")))),
       React.createElement("textarea", { value: form.description || "", onChange: (event) => setForm({ ...form, description: event.target.value }), placeholder: "Description" }),
       React.createElement("div", { className: "ai-product-studio" },
         React.createElement("div", { className: "ai-studio-head" },
@@ -518,7 +597,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
         ),
         React.createElement("select", { value: form.ai_type || "top", onChange: (event) => setForm({ ...form, ai_type: event.target.value }) }, aiProductTypes.map(([value, label]) => React.createElement("option", { key: value, value }, label))),
         React.createElement("p", { className: "ai-note" }, "AI pack creates 5 professional concepts: clean gray studio hero, product close-up, lifestyle, editorial, and social ad crop."),
-        (form.ai_images || []).length > 0 && React.createElement("div", { className: "admin-image-preview ai-pack-preview" }, form.ai_images.map((image, index) => React.createElement("button", { key: `${image}-${index}`, type: "button" }, React.createElement("img", { src: image, alt: `AI image ${index + 1}` }), React.createElement("span", null, `AI ${index + 1}`)))),
+        (form.ai_images || []).length > 0 && React.createElement("div", { className: "admin-image-preview ai-pack-preview" }, form.ai_images.map((image, index) => React.createElement("button", { key: `${image}-${index}`, type: "button" }, React.createElement(ProductVisual, { src: image, alt: `AI image ${index + 1}`, className: "admin-preview-product-visual" }), React.createElement("span", null, `AI ${index + 1}`)))),
         (form.ai_prompts || []).length > 0 && React.createElement("details", { className: "ai-prompts" }, React.createElement("summary", null, "View AI prompts"), React.createElement("ol", null, form.ai_prompts.map((prompt, index) => React.createElement("li", { key: index }, prompt))))
       ),
       React.createElement("button", { type: "submit" }, editing ? "Save Product" : "Add Product")
@@ -561,8 +640,8 @@ function ProductDetailDrawer({ product, onClose, onEdit }) {
       ),
       React.createElement("div", { className: "admin-drawer-scroll" },
         React.createElement("div", { className: "drawer-product-gallery" },
-          React.createElement("img", { className: "drawer-product-main", src: activeImage, alt: product.name, style: { objectPosition: product.crop || "center" } }),
-          images.length > 1 && React.createElement("div", { className: "drawer-product-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement("img", { src: image, alt: `${product.name} ${index + 1}` }))))
+          React.createElement(ProductVisual, { className: "drawer-product-main", src: activeImage, alt: product.name, loading: "eager", style: { objectPosition: product.crop || "center" } }),
+          images.length > 1 && React.createElement("div", { className: "drawer-product-thumbs" }, images.map((image, index) => React.createElement("button", { className: image === activeImage ? "active" : "", key: `${image}-${index}`, onClick: () => setActiveImage(image), type: "button" }, React.createElement(ProductVisual, { src: image, alt: `${product.name} ${index + 1}`, className: "drawer-thumb-visual" }))))
         ),
         React.createElement("div", { className: "drawer-status-line" },
           React.createElement("span", { className: isPublic ? "drawer-status active" : "drawer-status inactive" }, isPublic ? "Public / Active" : "Inactive / Hidden"),
@@ -1030,7 +1109,7 @@ function CustomerDetailDrawer({ customer, orders, onClose }) {
           orders.length ? orders.map((order) => React.createElement("article", { className: "customer-order-card", key: order.id },
             React.createElement("div", { className: "customer-order-head" }, React.createElement("strong", null, `Order #${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing")),
             React.createElement("small", null, `${formatAdminDate(order.created_at)} / $${Number(order.total || 0).toFixed(2)}`),
-            React.createElement("div", { className: "customer-order-items" }, (order.order_items || []).map((item) => React.createElement("div", { key: item.id }, React.createElement("img", { src: item.product_image || "assets/ai-products.png", alt: item.product_name }), React.createElement("span", null, React.createElement("strong", null, item.product_name), React.createElement("small", null, `${item.size ? `Size ${item.size} / ` : ""}Qty ${item.qty}`)))))
+            React.createElement("div", { className: "customer-order-items" }, (order.order_items || []).map((item) => React.createElement("div", { key: item.id }, React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "customer-order-product-visual" }), React.createElement("span", null, React.createElement("strong", null, item.product_name), React.createElement("small", null, `${item.size ? `Size ${item.size} / ` : ""}Qty ${item.qty}`)))))
           )) : React.createElement("p", null, "This customer has not placed an order yet.")
         )
       )
@@ -1116,7 +1195,7 @@ function AdminOrderItemEditor({ item, onSave }) {
   }
 
   return React.createElement("article", { className: "drawer-order-item" },
-    React.createElement("img", { src: item.product_image || "assets/ai-products.png", alt: item.product_name }),
+    React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }),
     React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Customer requested ${requestedQty}`)),
     React.createElement("label", null, React.createElement("span", null, "Approved qty"), React.createElement("input", { max: requestedQty, min: "0", onChange: (event) => setQty(Math.min(requestedQty, Math.max(0, Number(event.target.value) || 0))), type: "number", value: qty })),
     React.createElement("label", null, React.createElement("span", null, "Item status"), React.createElement("select", { onChange: (event) => setStatus(event.target.value), value: status }, ["Processing", "Approved", "Cancelled"].map((option) => React.createElement("option", { key: option }, option)))),
