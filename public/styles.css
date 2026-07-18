@@ -45,6 +45,137 @@ img {
   max-width: 100%;
 }
 
+.site-loader {
+  align-items: center;
+  background: #ffffff;
+  color: #111111;
+  display: grid;
+  inset: 0;
+  min-height: 100vh;
+  min-height: 100svh;
+  overflow: hidden;
+  place-items: center;
+  position: fixed;
+  width: 100%;
+  z-index: 9999;
+}
+
+.site-loader-center {
+  align-items: center;
+  display: grid;
+  justify-items: center;
+  position: relative;
+  width: min(82vw, 620px);
+  z-index: 1;
+}
+
+.site-loader-center img {
+  animation: oneten-loader-logo 1.8s ease-in-out infinite;
+  height: auto;
+  width: min(72vw, 560px);
+}
+
+.site-loader-center p {
+  color: #111111;
+  font-size: 20px;
+  font-weight: 500;
+  letter-spacing: 0;
+  margin: 46px 0 22px;
+}
+
+.site-loader-track {
+  background: #ffffff;
+  border: 1px solid rgba(242, 13, 20, 0.48);
+  border-radius: 999px;
+  height: 12px;
+  overflow: hidden;
+  width: min(68vw, 520px);
+}
+
+.site-loader-track span {
+  animation: oneten-loader-progress 1.7s cubic-bezier(0.55, 0, 0.2, 1) infinite;
+  background: #f20d14;
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+  transform: scaleX(0.08);
+  transform-origin: left center;
+  width: 100%;
+}
+
+.site-loader-rings {
+  border: 1px solid rgba(242, 13, 20, 0.16);
+  border-radius: 50%;
+  box-shadow:
+    0 0 0 16px rgba(242, 13, 20, 0.12),
+    0 0 0 32px rgba(242, 13, 20, 0.09),
+    0 0 0 48px rgba(242, 13, 20, 0.06),
+    0 0 0 64px rgba(242, 13, 20, 0.035);
+  height: 420px;
+  pointer-events: none;
+  position: absolute;
+  width: 260px;
+}
+
+.site-loader-rings-top {
+  left: -205px;
+  top: -175px;
+  transform: rotate(22deg);
+}
+
+.site-loader-rings-bottom {
+  bottom: -190px;
+  right: -190px;
+  transform: rotate(28deg);
+}
+
+@keyframes oneten-loader-progress {
+  0% { transform: scaleX(0.08); }
+  55% { transform: scaleX(0.58); }
+  100% { transform: scaleX(1); }
+}
+
+@keyframes oneten-loader-logo {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.015); }
+}
+
+@media (max-width: 560px) {
+  .site-loader-center {
+    width: min(88vw, 380px);
+  }
+
+  .site-loader-center img {
+    width: min(82vw, 340px);
+  }
+
+  .site-loader-center p {
+    font-size: 16px;
+    margin: 30px 0 16px;
+  }
+
+  .site-loader-track {
+    height: 10px;
+    width: min(78vw, 320px);
+  }
+
+  .site-loader-rings {
+    height: 300px;
+    width: 190px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .site-loader-center img,
+  .site-loader-track span {
+    animation: none;
+  }
+
+  .site-loader-track span {
+    transform: scaleX(0.72);
+  }
+}
+
 .icon {
   fill: none;
   height: 1.1em;
@@ -4501,13 +4632,18 @@ img {
 
 .detail-page {
   align-items: start;
+  min-width: 0;
 }
 
 .related-products {
   clear: both;
   display: block;
   grid-column: 1 / -1;
+  max-width: 100%;
   margin-top: 24px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 32px clamp(18px, 5vw, 76px) 0;
   position: relative;
   width: 100%;
   z-index: 1;
@@ -4515,6 +4651,9 @@ img {
 
 .related-products .product-grid {
   align-items: start;
+  max-width: 100%;
+  min-width: 0;
+  width: 100%;
 }
 
 @media (max-width: 900px) {
@@ -4594,12 +4733,12 @@ img {
 
 .related-products .product-grid {
   gap: 20px;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 280px));
-  justify-content: start;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .related-products .product-card {
-  max-width: 280px;
+  max-width: none;
+  min-width: 0;
   width: 100%;
 }
 
@@ -4662,7 +4801,6 @@ img {
     grid-template-columns: 1fr;
   }
 }
-+
 
 /* Multi-size buying and admin detail drawers */
 .multi-size-picker {
@@ -5604,12 +5742,26 @@ img {
 .drawer-product-main {
   aspect-ratio: 1 / 1;
   border-radius: 8px;
+  display: block;
+  height: auto;
+  max-height: none;
+  max-width: 100%;
+  object-fit: contain;
   width: 100%;
 }
 
 .detail-product-visual {
   box-shadow: var(--shadow);
-  max-height: 520px;
+  justify-self: center;
+  width: min(100%, 640px);
+}
+
+.detail-media > .detail-product-visual {
+  aspect-ratio: 1 / 1;
+  height: auto;
+  max-height: none;
+  object-fit: contain;
+  width: min(100%, 640px);
 }
 
 .detail-thumb-visual,

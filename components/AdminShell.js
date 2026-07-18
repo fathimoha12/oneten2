@@ -3,7 +3,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260716-ai-catalog-5";
+const ASSET_VERSION = "20260718-loading-screen-3";
 
 if (typeof window !== "undefined") {
   window.React = React;

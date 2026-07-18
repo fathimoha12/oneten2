@@ -1,10 +1,10 @@
 const { useEffect, useMemo, useState } = React;
 
 const assets = {
-  logoRed: "assets/logo-red.png",
-  logoWhite: "assets/logo-white.png",
-  hero: "assets/ai-hero.png",
-  products: "assets/ai-products.png",
+  logoRed: "/assets/logo-red.png",
+  logoWhite: "/assets/logo-white.png",
+  hero: "/assets/ai-hero.png",
+  products: "/assets/ai-products.png",
 };
 
 const API_BASE_URL = (document.querySelector('meta[name="one-ten-api-base"]')?.content || window.API_BASE_URL || localStorage.getItem("API_BASE_URL") || "").replace(/\/$/, "");
@@ -228,6 +228,18 @@ function loadCart() {
   }
 }
 
+function LoadingScreen() {
+  return React.createElement("main", { "aria-label": "ONE TEN loading", "aria-live": "polite", className: "site-loader", role: "status" },
+    React.createElement("span", { "aria-hidden": "true", className: "site-loader-rings site-loader-rings-top" }),
+    React.createElement("span", { "aria-hidden": "true", className: "site-loader-rings site-loader-rings-bottom" }),
+    React.createElement("div", { className: "site-loader-center" },
+      React.createElement("img", { alt: "ONE TEN", src: assets.logoRed }),
+      React.createElement("p", null, "Loading..."),
+      React.createElement("div", { "aria-hidden": "true", className: "site-loader-track" }, React.createElement("span"))
+    )
+  );
+}
+
 function App() {
   const [route, setRoute] = useState(routeFromLocation);
   const [theme, setTheme] = useState(localStorage.getItem("oneTenTheme") || "day");
@@ -240,6 +252,7 @@ function App() {
   const [cart, setCart] = useState(loadCart);
   const [notice, setNotice] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
+  const [bootLoading, setBootLoading] = useState(true);
 
   useEffect(() => {
     const onRoute = () => setRoute(routeFromLocation());
@@ -281,8 +294,14 @@ function App() {
   }, []);
 
   useEffect(() => {
-    loadPublic();
+    let active = true;
+    loadPublic().finally(() => {
+      if (active) setBootLoading(false);
+    });
     loadCustomer();
+    return () => {
+      active = false;
+    };
   }, []);
 
   useEffect(() => {
@@ -301,7 +320,7 @@ function App() {
       setSettings(bootstrap.settings || {});
       setProducts(catalog.products || []);
     };
-    Promise.all([api("/api/public/bootstrap"), api("/api/public/products")])
+    return Promise.all([api("/api/public/bootstrap"), api("/api/public/products")])
       .then(([bootstrap, catalog]) => applyData(bootstrap, catalog))
       .catch(() => {
         const isLocalDevelopment = ["localhost", "127.0.0.1"].includes(window.location.hostname);
@@ -309,7 +328,7 @@ function App() {
           applyData({}, {});
           return;
         }
-        fetch("/dev-catalog.json")
+        return fetch("/dev-catalog.json")
           .then((response) => response.ok ? response.json() : Promise.reject(new Error("Development catalog unavailable")))
           .then((fixture) => applyData(fixture, fixture))
           .catch(() => applyData({}, {}));
@@ -428,6 +447,8 @@ function App() {
   }), [cart, products]);
   const total = cartProducts.reduce((sum, item) => sum + Number(item.price) * Number(item.qty), 0);
   const cartCount = new Set(cart.map((item) => String(item.id))).size;
+
+  if (bootLoading) return React.createElement(LoadingScreen);
 
   return React.createElement("div", { className: `store ${theme}` },
     React.createElement(TopBar, { customer, logout }),
@@ -550,7 +571,7 @@ function ShopPage({ products, categories, query, addToCart, navigate, settings }
   const [priceFilters, setPriceFilters] = useState([]);
   const [page, setPage] = useState(1);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const productsPerPage = view === "list" ? 4 : 3;
+  const productsPerPage = view === "list" ? 8 : 12;
 
   const priceRanges = [
     { id: "1-3", label: "$1 - $3", min: 1, max: 3 },
