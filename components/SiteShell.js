@@ -4,9 +4,16 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260718-loading-screen-3";
+const ASSET_VERSION = "20260719-loader-first-open-1";
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://oneten2.vercel.app").replace(/\/$/, "");
 const BRAND_ICON_URL = `${SITE_URL}/assets/one-ten-app-icon.png`;
+const loaderSeenScript = `
+try {
+  if (localStorage.getItem("oneTenLoaderSeen") === "1" || sessionStorage.getItem("oneTenLoaderSeen") === "1") {
+    document.documentElement.classList.add("one-ten-loader-seen");
+  }
+} catch (error) {}
+`;
 
 if (typeof window !== "undefined") {
   window.React = React;
@@ -81,6 +88,7 @@ export default function SiteShell({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData).replace(/</g, "\\u003c") }}
         />
+        <script dangerouslySetInnerHTML={{ __html: loaderSeenScript }} />
         <link rel="preload" as="image" href="/assets/logo-red.png" />
         <link rel="preload" as="image" href="/assets/ai-hero.png" />
       </Head>

@@ -8,6 +8,25 @@ const assets = {
 };
 
 const API_BASE_URL = (document.querySelector('meta[name="one-ten-api-base"]')?.content || window.API_BASE_URL || localStorage.getItem("API_BASE_URL") || "").replace(/\/$/, "");
+const LOADER_SEEN_KEY = "oneTenLoaderSeen";
+
+function hasSeenLoader() {
+  try {
+    return localStorage.getItem(LOADER_SEEN_KEY) === "1" || sessionStorage.getItem(LOADER_SEEN_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markLoaderSeen() {
+  try {
+    localStorage.setItem(LOADER_SEEN_KEY, "1");
+    sessionStorage.setItem(LOADER_SEEN_KEY, "1");
+    document.documentElement.classList.add("one-ten-loader-seen");
+  } catch {
+    // Private browsing can block storage; the app still loads normally.
+  }
+}
 
 function apiUrl(path) {
   return path.startsWith("http") ? path : `${API_BASE_URL}${path}`;
@@ -252,7 +271,7 @@ function App() {
   const [cart, setCart] = useState(loadCart);
   const [notice, setNotice] = useState("");
   const [installPrompt, setInstallPrompt] = useState(null);
-  const [bootLoading, setBootLoading] = useState(true);
+  const [bootLoading, setBootLoading] = useState(() => !hasSeenLoader());
 
   useEffect(() => {
     const onRoute = () => setRoute(routeFromLocation());
@@ -297,21 +316,12 @@ function App() {
     let active = true;
     let finishTimer;
     const startedAt = Date.now();
-    let loaderSeen = false;
-    try {
-      loaderSeen = sessionStorage.getItem("oneTenLoaderSeen") === "1";
-    } catch {
-      loaderSeen = false;
-    }
+    const loaderSeen = hasSeenLoader();
     const minimumDuration = loaderSeen ? 0 : 850;
     loadPublic().finally(() => {
       const finishLoading = () => {
         if (!active) return;
-        try {
-          sessionStorage.setItem("oneTenLoaderSeen", "1");
-        } catch {
-          // The loader still works when private browsing blocks session storage.
-        }
+        markLoaderSeen();
         setBootLoading(false);
       };
       const remaining = Math.max(0, minimumDuration - (Date.now() - startedAt));

@@ -60,6 +60,10 @@ img {
   z-index: 9999;
 }
 
+.one-ten-loader-seen .site-loader {
+  display: none;
+}
+
 .site-loader-center {
   align-items: center;
   display: grid;
