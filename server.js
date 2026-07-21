@@ -1254,7 +1254,7 @@ async function handlePostPutDelete(req, res, method, pathname) {
           });
         }
         await client.query("UPDATE order_items SET qty = 0, status = 'Cancelled' WHERE order_id = $1", [orderId]);
-        await client.query("UPDATE orders SET status = 'Cancelled', payment_status = 'Voided', voided_at = $1, voided_by = $2, notes = CONCAT(COALESCE(notes, ''), $3) WHERE id = $4", [now(), access.staff.id, `\nVoid reason: ${cleanText(data.reason || "No reason provided", 300)}`, orderId]);
+        await client.query("UPDATE orders SET status = 'Cancelled', payment_status = 'Voided', voided_at = $1, voided_by = $2, notes = CONCAT(COALESCE(notes, ''), $3::text) WHERE id = $4", [now(), access.staff.id, `\nVoid reason: ${cleanText(data.reason || "No reason provided", 300)}`, orderId]);
         const sale = await saleRecord(client, orderId);
         await client.query("COMMIT");
         return sendJson(req, res, 200, { sale });
@@ -1555,7 +1555,7 @@ async function handlePostPutDelete(req, res, method, pathname) {
           }
           await client.query("UPDATE order_items SET qty = 0, status = 'Cancelled' WHERE order_id = $1", [orderId]);
           if (orderState.rows[0].source === "pos") {
-            await client.query("UPDATE orders SET status = 'Cancelled', payment_status = 'Voided', voided_at = $1, notes = CONCAT(COALESCE(notes, ''), $2) WHERE id = $3", [now(), `\nVoided by admin ${admin.username}`, orderId]);
+            await client.query("UPDATE orders SET status = 'Cancelled', payment_status = 'Voided', voided_at = $1, notes = CONCAT(COALESCE(notes, ''), $2::text) WHERE id = $3", [now(), `\nVoided by admin ${admin.username}`, orderId]);
           } else {
             await client.query("UPDATE orders SET status = 'Cancelled', total = 0 WHERE id = $1", [orderId]);
           }

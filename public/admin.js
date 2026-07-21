@@ -1317,6 +1317,11 @@ function OrdersAdmin({ data, refresh, setMessage, onOpenCustomer }) {
 }
 
 function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateItem, onUpdateOrder }) {
+  function cancelEntireOrder() {
+    const itemCount = (order.order_items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+    if (window.confirm(`Cancel the entire order and return ${itemCount} item${itemCount === 1 ? "" : "s"} to stock?`)) onUpdateOrder(order, "Cancelled");
+  }
+
   return React.createElement(React.Fragment, null,
     React.createElement("button", { "aria-label": "Close order details", className: "admin-drawer-backdrop", onClick: onClose, type: "button" }),
     React.createElement("aside", { "aria-label": `Order ${order.id} details`, "aria-modal": "true", className: "admin-detail-drawer order-detail-drawer", role: "dialog" },
@@ -1337,8 +1342,14 @@ function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateIt
         ),
         order.source === "pos"
           ? React.createElement("div", { className: "order-status-control" }, React.createElement("span", null, "Completed POS receipt"), order.status !== "Cancelled" ? React.createElement("button", { onClick: () => onUpdateOrder(order, "Cancelled"), type: "button" }, "Void sale and restore stock") : React.createElement("strong", null, "Voided / stock restored"))
-          : React.createElement("label", { className: "order-status-control" }, React.createElement("span", null, "Overall order status"), React.createElement("select", { onChange: (event) => onUpdateOrder(order, event.target.value), value: order.status || "Processing" }, ["Processing", "Packed", "Delivered", "Cancelled"].map((status) => React.createElement("option", { key: status }, status)))),
-        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products, sizes and quantities"), React.createElement("p", null, order.source === "pos" ? "Completed POS lines are read-only. Void the receipt to restore all stock." : "Edit each size line separately. Returned quantities are restored to stock automatically."),
+          : order.status === "Cancelled"
+            ? React.createElement("div", { className: "order-cancelled-banner" }, React.createElement("strong", null, "Entire order cancelled"), React.createElement("span", null, "All remaining quantities were returned to stock."))
+            : React.createElement("div", { className: "order-cancel-control" },
+              React.createElement("label", null, React.createElement("span", null, "Overall order status"), React.createElement("select", { onChange: (event) => onUpdateOrder(order, event.target.value), value: order.status || "Processing" }, ["Processing", "Approved", "Packed", "Delivered"].map((status) => React.createElement("option", { key: status }, status)))),
+              React.createElement("div", null, React.createElement("strong", null, "Cancel everything"), React.createElement("span", null, "Cancels every remaining product and restores all stock.")),
+              React.createElement("button", { onClick: cancelEntireOrder, type: "button" }, "Cancel Entire Order")
+            ),
+        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products, sizes and quantities"), React.createElement("p", null, order.source === "pos" ? "Completed POS lines are read-only. Void the receipt to restore all stock." : "For a partial cancellation, enter how many units to cancel on each product. Use Cancel Product to cancel a complete line."),
           React.createElement("div", { className: "drawer-order-items" }, (order.order_items || []).map((item) => order.source === "pos" ? React.createElement("article", { className: "drawer-order-item", key: item.id }, React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }), React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Sold quantity ${Number(item.qty || item.requested_qty || 0)}`))) : React.createElement(AdminOrderItemEditor, { item, key: item.id, onSave: onUpdateItem })))
         )
       )
@@ -1347,27 +1358,42 @@ function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateIt
 }
 
 function AdminOrderItemEditor({ item, onSave }) {
-  const [qty, setQty] = useState(Number(item.qty || 0));
+  const requestedQty = Math.max(1, Number(item.requested_qty || item.qty || 1));
+  const currentQty = Math.max(0, Number(item.qty || 0));
+  const alreadyCancelled = Math.max(0, requestedQty - currentQty);
+  const [cancelQty, setCancelQty] = useState(alreadyCancelled);
   const [status, setStatus] = useState(item.status || "Processing");
   const [saving, setSaving] = useState(false);
   useEffect(() => {
-    setQty(Number(item.qty || 0));
+    setCancelQty(Math.max(0, Math.max(1, Number(item.requested_qty || item.qty || 1)) - Math.max(0, Number(item.qty || 0))));
     setStatus(item.status || "Processing");
-  }, [item.id, item.qty, item.status]);
-  const requestedQty = Math.max(1, Number(item.requested_qty || item.qty || 1));
-  const changed = qty !== Number(item.qty || 0) || status !== (item.status || "Processing");
+  }, [item.id, item.qty, item.requested_qty, item.status]);
+  const remainingQty = Math.max(0, requestedQty - cancelQty);
+  const nextStatus = remainingQty === 0 ? "Cancelled" : status === "Cancelled" ? "Processing" : status;
+  const changed = cancelQty !== alreadyCancelled || nextStatus !== (item.status || "Processing");
+  const locked = item.status === "Cancelled";
 
   function save() {
+    if (cancelQty > alreadyCancelled && !window.confirm(`Cancel ${cancelQty - alreadyCancelled} additional unit${cancelQty - alreadyCancelled === 1 ? "" : "s"} of ${item.product_name}?`)) return;
     setSaving(true);
-    Promise.resolve(onSave(item, { qty, status })).finally(() => setSaving(false));
+    Promise.resolve(onSave(item, { qty: remainingQty, status: nextStatus })).finally(() => setSaving(false));
   }
 
-  return React.createElement("article", { className: "drawer-order-item" },
+  function cancelProduct() {
+    if (!window.confirm(`Cancel all ${currentQty} remaining unit${currentQty === 1 ? "" : "s"} of ${item.product_name} and return them to stock?`)) return;
+    setSaving(true);
+    Promise.resolve(onSave(item, { qty: 0, status: "Cancelled" })).finally(() => setSaving(false));
+  }
+
+  return React.createElement("article", { className: `drawer-order-item ${locked ? "is-cancelled" : ""}` },
     React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }),
-    React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Customer requested ${requestedQty}`)),
-    React.createElement("label", null, React.createElement("span", null, "Approved qty"), React.createElement("input", { max: requestedQty, min: "0", onChange: (event) => setQty(Math.min(requestedQty, Math.max(0, Number(event.target.value) || 0))), type: "number", value: qty })),
-    React.createElement("label", null, React.createElement("span", null, "Item status"), React.createElement("select", { onChange: (event) => setStatus(event.target.value), value: status }, ["Processing", "Approved", "Cancelled"].map((option) => React.createElement("option", { key: option }, option)))),
-    React.createElement("button", { disabled: !changed || saving, onClick: save, type: "button" }, saving ? "Saving..." : changed ? "Save Line" : "Saved")
+    React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Requested ${requestedQty} / Keeping ${remainingQty} / Cancelling ${cancelQty}`)),
+    React.createElement("label", null, React.createElement("span", null, "Cancel quantity"), React.createElement("input", { disabled: locked, max: requestedQty, min: alreadyCancelled, onChange: (event) => setCancelQty(Math.min(requestedQty, Math.max(alreadyCancelled, Number(event.target.value) || 0))), type: "number", value: cancelQty })),
+    React.createElement("label", null, React.createElement("span", null, "Remaining status"), React.createElement("select", { disabled: locked || remainingQty === 0, onChange: (event) => setStatus(event.target.value), value: nextStatus }, ["Processing", "Approved", ...(nextStatus === "Cancelled" ? ["Cancelled"] : [])].map((option) => React.createElement("option", { key: option }, option)))),
+    React.createElement("div", { className: "line-cancel-actions" },
+      React.createElement("button", { disabled: !changed || saving || locked, onClick: save, type: "button" }, saving ? "Saving..." : changed ? "Save Partial" : locked ? "Cancelled" : "Saved"),
+      React.createElement("button", { className: "cancel-line", disabled: saving || locked || currentQty <= 0, onClick: cancelProduct, type: "button" }, "Cancel Product")
+    )
   );
 }
 
