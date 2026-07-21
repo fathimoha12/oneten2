@@ -208,7 +208,7 @@ function AdminApp() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState("dashboard");
-  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], customers: [], subscribers: [], dashboard: {}, settings: {}, admin: {} });
+  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], customers: [], subscribers: [], staff: [], permission_catalog: [], dashboard: {}, settings: {}, admin: {} });
 
   useEffect(() => {
     if (token) refresh();
@@ -263,9 +263,10 @@ function AdminApp() {
   return React.createElement("div", { className: "admin-shell" },
     React.createElement("aside", { className: "admin-sidebar" },
       React.createElement("img", { src: data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png", alt: "ONE TEN" }),
-      [["dashboard", "Dashboard"], ["products", "Products"], ["catalog", "Catalog Tools"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
+      [["dashboard", "Dashboard"], ["products", "Products"], ["catalog", "Catalog Tools"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["staff", "Staff & POS Access"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
         React.createElement("button", { className: tab === id ? "active" : "", key: id, onClick: () => setTab(id), type: "button" }, label)
       ),
+      React.createElement("a", { href: "/pos" }, "Open POS"),
       React.createElement("a", { href: "/" }, "Public Website"),
       React.createElement("button", { type: "button", onClick: logout }, "Logout")
     ),
@@ -283,6 +284,8 @@ function AdminApp() {
         React.createElement(Stat, { label: "Customers", value: data.dashboard.customers || 0 }),
         React.createElement(Stat, { label: "Subscribers", value: data.dashboard.subscribers || 0 }),
         React.createElement(Stat, { label: "Revenue", value: `$${Number(data.dashboard.revenue || 0).toFixed(2)}` }),
+        React.createElement(Stat, { label: "POS Revenue", value: `$${Number(data.dashboard.posRevenue || 0).toFixed(2)}` }),
+        React.createElement(Stat, { label: "Active Staff", value: data.dashboard.staff || 0 }),
         React.createElement(Stat, { label: "Low Stock", value: data.dashboard.lowStock || 0 })
       ),
       message && React.createElement("div", { className: "admin-message" }, message),
@@ -293,6 +296,7 @@ function AdminApp() {
       tab === "ads" && React.createElement(AdsAdmin, { data, refresh, setMessage }),
       tab === "about" && React.createElement(AboutAdmin, { data, refresh, setMessage }),
       tab === "settings" && React.createElement(SettingsAdmin, { data, refresh, setMessage }),
+      tab === "staff" && React.createElement(StaffAdmin, { data, refresh, setMessage }),
       tab === "subscribers" && React.createElement(SubscribersAdmin, { data }),
       tab === "customers" && React.createElement(CustomersAdmin, { data }),
       tab === "orders" && React.createElement(OrdersAdmin, { data, refresh, setMessage }),
@@ -981,6 +985,112 @@ function SettingsAdmin({ data, refresh, setMessage }) {
   );
 }
 
+const fallbackStaffPermissions = [
+  { key: "pos.sell", label: "Create in-store sales", group: "Point of Sale" },
+  { key: "pos.history", label: "View POS sale history and receipts", group: "Point of Sale" },
+  { key: "pos.void", label: "Void a POS sale and restore stock", group: "Point of Sale" },
+  { key: "inventory.view", label: "View products and stock", group: "Store Access" },
+  { key: "orders.view", label: "View online customer orders", group: "Store Access" },
+  { key: "customers.view", label: "View registered customers", group: "Store Access" },
+  { key: "reports.view", label: "View sales totals and reports", group: "Store Access" },
+];
+
+function StaffAdmin({ data, refresh, setMessage }) {
+  const blank = { name: "", username: "", role: "Receptionist", password: "", active: true, permissions: ["pos.sell", "pos.history", "inventory.view"] };
+  const [form, setForm] = useState(blank);
+  const [editing, setEditing] = useState(null);
+  const catalog = data.permission_catalog && data.permission_catalog.length ? data.permission_catalog : fallbackStaffPermissions;
+  const staff = data.staff || [];
+
+  function togglePermission(key) {
+    const selected = Array.isArray(form.permissions) ? form.permissions : [];
+    setForm({ ...form, permissions: selected.includes(key) ? selected.filter((item) => item !== key) : [...selected, key] });
+  }
+
+  function save(event) {
+    event.preventDefault();
+    const path = editing ? `/api/admin/staff/${editing}` : "/api/admin/staff";
+    adminApi(path, { method: editing ? "PUT" : "POST", body: JSON.stringify(form) })
+      .then(() => {
+        setMessage(editing ? "Staff permissions updated" : "Staff account created");
+        setEditing(null);
+        setForm(blank);
+        refresh();
+      })
+      .catch((error) => setMessage(error.message));
+  }
+
+  function edit(member) {
+    setEditing(member.id);
+    setForm({
+      name: member.name || "",
+      username: member.username || "",
+      role: member.role || "Receptionist",
+      password: "",
+      active: Number(member.active) === 1 || member.active === true,
+      permissions: Array.isArray(member.permissions) ? member.permissions : [],
+    });
+  }
+
+  function deactivate(member) {
+    if (!window.confirm(`Deactivate ${member.name}? Their open POS sessions will be signed out.`)) return;
+    adminApi(`/api/admin/staff/${member.id}`, { method: "DELETE" })
+      .then(() => {
+        setMessage(`${member.name} was deactivated`);
+        refresh();
+      })
+      .catch((error) => setMessage(error.message));
+  }
+
+  const groups = [...new Set(catalog.map((permission) => permission.group || "Permissions"))];
+  return React.createElement("section", { className: "staff-admin-layout" },
+    React.createElement("form", { className: "admin-form staff-form", onSubmit: save },
+      React.createElement("div", { className: "staff-form-heading" },
+        React.createElement("div", null,
+          React.createElement("span", null, editing ? "Edit staff access" : "New staff account"),
+          React.createElement("h2", null, editing ? "Update Receptionist / Seller" : "Register Receptionist / Seller")
+        ),
+        editing && React.createElement("button", { className: "secondary", onClick: () => { setEditing(null); setForm(blank); }, type: "button" }, "Cancel edit")
+      ),
+      React.createElement("div", { className: "staff-field-grid" },
+        React.createElement("label", null, React.createElement("span", null, "Full name"), React.createElement("input", { required: true, value: form.name, onChange: (event) => setForm({ ...form, name: event.target.value }), placeholder: "e.g. Ayaan Ahmed" })),
+        React.createElement("label", null, React.createElement("span", null, "Username"), React.createElement("input", { required: true, value: form.username, onChange: (event) => setForm({ ...form, username: event.target.value.toLowerCase() }), placeholder: "ayaan.pos" })),
+        React.createElement("label", null, React.createElement("span", null, "Role title"), React.createElement("select", { value: form.role, onChange: (event) => setForm({ ...form, role: event.target.value }) }, ["Receptionist", "Seller", "Cashier", "Store Manager"].map((role) => React.createElement("option", { key: role, value: role }, role)))),
+        React.createElement("label", null, React.createElement("span", null, editing ? "New password (optional)" : "Temporary password"), React.createElement("input", { required: !editing, minLength: 6, type: "password", value: form.password, onChange: (event) => setForm({ ...form, password: event.target.value }), placeholder: editing ? "Leave blank to keep current" : "At least 6 characters" }))
+      ),
+      editing && React.createElement("label", { className: "staff-active-toggle" }, React.createElement("input", { checked: !!form.active, onChange: (event) => setForm({ ...form, active: event.target.checked }), type: "checkbox" }), React.createElement("span", null, "Account is active")),
+      React.createElement("div", { className: "permission-groups" }, groups.map((group) =>
+        React.createElement("fieldset", { key: group },
+          React.createElement("legend", null, group),
+          catalog.filter((permission) => (permission.group || "Permissions") === group).map((permission) =>
+            React.createElement("label", { className: form.permissions.includes(permission.key) ? "permission-option selected" : "permission-option", key: permission.key },
+              React.createElement("input", { checked: form.permissions.includes(permission.key), onChange: () => togglePermission(permission.key), type: "checkbox" }),
+              React.createElement("span", null, React.createElement("strong", null, permission.label), React.createElement("small", null, permission.key))
+            )
+          )
+        )
+      )),
+      React.createElement("button", { className: "staff-save", type: "submit" }, editing ? "Save Staff Access" : "Create Staff Account")
+    ),
+    React.createElement("div", { className: "admin-table staff-directory" },
+      React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Admin controlled access"), React.createElement("h2", null, "Staff Directory")), React.createElement("strong", null, `${staff.length} accounts`)),
+      staff.length ? staff.map((member) => React.createElement("article", { className: "staff-account-row", key: member.id },
+        React.createElement("div", { className: "staff-avatar" }, customerInitials(member.name)),
+        React.createElement("div", { className: "staff-account-main" },
+          React.createElement("div", null, React.createElement("strong", null, member.name), React.createElement("span", { className: member.active ? "staff-status active" : "staff-status" }, member.active ? "Active" : "Inactive")),
+          React.createElement("p", null, `${member.role || "Receptionist"} / @${member.username}`),
+          React.createElement("div", { className: "staff-permission-pills" }, (member.permissions || []).map((permission) => React.createElement("span", { key: permission }, permission.replace(".", " / ")))),
+          React.createElement("small", null, member.last_login_at ? `Last login ${formatAdminDate(member.last_login_at)}` : "Has not signed in yet")
+        ),
+        React.createElement("div", { className: "row-actions" },
+          React.createElement("button", { onClick: () => edit(member), type: "button" }, "Edit"),
+          member.active && React.createElement("button", { className: "danger", onClick: () => deactivate(member), type: "button" }, "Deactivate")
+        )
+      )) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, "No staff accounts yet"), React.createElement("p", null, "Register a receptionist or seller and choose exactly what they can access."))
+    )
+  );
+}
+
 function SecurityAdmin({ data, refresh, setMessage }) {
   const admin = data.admin || {};
   const [form, setForm] = useState({
@@ -1141,9 +1251,9 @@ function OrdersAdmin({ data, refresh, setMessage }) {
   }
 
   return React.createElement("section", { className: "admin-table orders orders-board" },
-    React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Order management"), React.createElement("h2", null, "Customer Orders")), React.createElement("strong", null, `${(data.orders || []).length} orders`)),
+    React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Online + in-store"), React.createElement("h2", null, "All Sales & Orders")), React.createElement("strong", null, `${(data.orders || []).length} records`)),
     (data.orders || []).length ? data.orders.map((order) => React.createElement("article", { className: "order-row order-row-clickable", key: order.id, onClick: () => setSelectedOrderId(order.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedOrderId(order.id); }, role: "button", tabIndex: 0 },
-      React.createElement("div", { className: "order-row-id" }, React.createElement("strong", null, `#${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing")),
+      React.createElement("div", { className: "order-row-id" }, React.createElement("strong", null, order.receipt_number || `#${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing"), React.createElement("small", null, order.source === "pos" ? "In-store POS" : "Online")),
       React.createElement("div", { className: "order-row-customer" }, React.createElement("strong", null, order.customer_name), React.createElement("span", null, order.phone || "No phone"), React.createElement("small", null, order.address || "No address")),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Product lines"), React.createElement("strong", null, Number(order.items || (order.order_items || []).length))),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Total"), React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)),
@@ -1166,12 +1276,16 @@ function AdminOrderDrawer({ order, customer, onClose, onUpdateItem, onUpdateOrde
         React.createElement("dl", { className: "drawer-details-list" },
           React.createElement("div", null, React.createElement("dt", null, "Delivery address"), React.createElement("dd", null, order.address || "Not provided")),
           React.createElement("div", null, React.createElement("dt", null, "Placed"), React.createElement("dd", null, formatAdminDate(order.created_at))),
+          React.createElement("div", null, React.createElement("dt", null, "Sales channel"), React.createElement("dd", null, order.source === "pos" ? `POS / ${order.payment_method || "Payment"}` : "Online store")),
+          order.receipt_number && React.createElement("div", null, React.createElement("dt", null, "Receipt"), React.createElement("dd", null, order.receipt_number)),
           React.createElement("div", null, React.createElement("dt", null, "Product lines"), React.createElement("dd", null, Number(order.items || (order.order_items || []).length))),
           React.createElement("div", null, React.createElement("dt", null, "Order total"), React.createElement("dd", null, `$${Number(order.total || 0).toFixed(2)}`))
         ),
-        React.createElement("label", { className: "order-status-control" }, React.createElement("span", null, "Overall order status"), React.createElement("select", { onChange: (event) => onUpdateOrder(order, event.target.value), value: order.status || "Processing" }, ["Processing", "Packed", "Delivered", "Cancelled"].map((status) => React.createElement("option", { key: status }, status)))),
-        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products, sizes and quantities"), React.createElement("p", null, "Edit each size line separately. Returned quantities are restored to stock automatically."),
-          React.createElement("div", { className: "drawer-order-items" }, (order.order_items || []).map((item) => React.createElement(AdminOrderItemEditor, { item, key: item.id, onSave: onUpdateItem })))
+        order.source === "pos"
+          ? React.createElement("div", { className: "order-status-control" }, React.createElement("span", null, "Completed POS receipt"), order.status !== "Cancelled" ? React.createElement("button", { onClick: () => onUpdateOrder(order, "Cancelled"), type: "button" }, "Void sale and restore stock") : React.createElement("strong", null, "Voided / stock restored"))
+          : React.createElement("label", { className: "order-status-control" }, React.createElement("span", null, "Overall order status"), React.createElement("select", { onChange: (event) => onUpdateOrder(order, event.target.value), value: order.status || "Processing" }, ["Processing", "Packed", "Delivered", "Cancelled"].map((status) => React.createElement("option", { key: status }, status)))),
+        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products, sizes and quantities"), React.createElement("p", null, order.source === "pos" ? "Completed POS lines are read-only. Void the receipt to restore all stock." : "Edit each size line separately. Returned quantities are restored to stock automatically."),
+          React.createElement("div", { className: "drawer-order-items" }, (order.order_items || []).map((item) => order.source === "pos" ? React.createElement("article", { className: "drawer-order-item", key: item.id }, React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }), React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Sold quantity ${Number(item.qty || item.requested_qty || 0)}`))) : React.createElement(AdminOrderItemEditor, { item, key: item.id, onSave: onUpdateItem })))
         )
       )
     )

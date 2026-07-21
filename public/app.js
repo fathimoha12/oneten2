@@ -41,7 +41,8 @@ function api(path, options = {}) {
   };
 
   if (typeof fetch === "function") {
-    return fetch(apiUrl(path), { ...options, headers }).then(async (response) => {
+    const liveInventoryRequest = String(path).startsWith("/api/public/products");
+    return fetch(apiUrl(path), { ...options, headers, ...(liveInventoryRequest ? { cache: "no-store" } : {}) }).then(async (response) => {
       const text = await response.text();
       let data = {};
       try {
@@ -280,6 +281,24 @@ function App() {
     return () => {
       window.removeEventListener("hashchange", onRoute);
       window.removeEventListener("popstate", onRoute);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refreshProducts = () => api("/api/public/products")
+      .then((catalog) => { if (active) setProducts(catalog.products || []); })
+      .catch(() => {});
+    const timer = window.setInterval(refreshProducts, 15000);
+    const onFocus = () => refreshProducts();
+    const onVisibility = () => { if (document.visibilityState === "visible") refreshProducts(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
     };
   }, []);
 

@@ -1,4 +1,4 @@
-const CACHE_VERSION = "one-ten-v20260719-1";
+const CACHE_VERSION = "one-ten-v20260720-pos-1";
 const STATIC_CACHE = `${CACHE_VERSION}-static`;
 const DATA_CACHE = `${CACHE_VERSION}-data`;
 
@@ -77,6 +77,11 @@ self.addEventListener("fetch", (event) => {
         })
         .catch(async () => (await caches.match(request)) || caches.match("/offline.html"))
     );
+    return;
+  }
+
+  if (url.pathname === "/api/public/products" || url.pathname.startsWith("/api/public/products/")) {
+    event.respondWith(fetch(request, { cache: "no-store" }));
     return;
   }
 
