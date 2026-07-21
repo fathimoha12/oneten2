@@ -891,7 +891,22 @@ async function handleGet(req, res, pathname) {
         ? query(`SELECT o.*, COUNT(oi.id)::int AS items FROM orders o LEFT JOIN order_items oi ON oi.order_id = o.id WHERE o.source = 'online' GROUP BY o.id ORDER BY o.id DESC LIMIT 150`)
         : Promise.resolve({ rows: [] }),
       canSeeCustomers
-        ? query(`SELECT c.id, c.name, c.email, c.created_at, COUNT(o.id) FILTER (WHERE o.status != 'Cancelled')::int AS order_count, COALESCE(SUM(o.total) FILTER (WHERE o.status != 'Cancelled'), 0) AS total_spent FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id ORDER BY c.id DESC LIMIT 150`)
+        ? query(`SELECT
+                   c.id,
+                   c.name,
+                   c.email,
+                   c.created_at,
+                   COUNT(o.id) FILTER (WHERE o.status != 'Cancelled')::int AS order_count,
+                   COALESCE(SUM(o.total) FILTER (WHERE o.status != 'Cancelled'), 0) AS total_spent,
+                   (SELECT o2.phone FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.phone, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS phone,
+                   (SELECT o2.address FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.address, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS address,
+                   (SELECT o2.id FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_id,
+                   (SELECT o2.created_at FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_at
+                 FROM customers c
+                 LEFT JOIN orders o ON o.customer_id = c.id
+                 GROUP BY c.id, c.name, c.email, c.created_at
+                 ORDER BY total_spent DESC, c.id DESC
+                 LIMIT 150`)
         : Promise.resolve({ rows: [] }),
       canSeePosSales || canSeeOnlineOrders ? query("SELECT * FROM order_items ORDER BY order_id DESC, id") : Promise.resolve({ rows: [] }),
       canSeeReports
@@ -1123,14 +1138,22 @@ async function handlePostPutDelete(req, res, method, pathname) {
         if (amountPaid < total) throw Object.assign(new Error(`Amount paid must be at least $${total.toFixed(2)}`), { status: 400 });
         const changeDue = Number((amountPaid - total).toFixed(2));
         const createdAt = now();
+        const requestedCustomerId = Number(data.customer_id) || null;
+        let linkedCustomer = null;
+        if (requestedCustomerId) {
+          const customerResult = await client.query("SELECT id, name, email FROM customers WHERE id = $1", [requestedCustomerId]);
+          linkedCustomer = customerResult.rows[0] || null;
+          if (!linkedCustomer) throw Object.assign(new Error("Selected customer was not found"), { status: 400 });
+        }
         const inserted = await client.query(
           `INSERT INTO orders
            (customer_id, staff_id, customer_name, phone, address, status, source, payment_method, payment_status, subtotal, discount, amount_paid, change_due, notes, total, created_at)
-           VALUES (NULL, $1, $2, $3, '', 'Delivered', 'pos', $4, 'Paid', $5, $6, $7, $8, $9, $10, $11)
+           VALUES ($1, $2, $3, $4, '', 'Delivered', 'pos', $5, 'Paid', $6, $7, $8, $9, $10, $11, $12)
            RETURNING id`,
           [
+            linkedCustomer && linkedCustomer.id,
             access.staff.id,
-            cleanText(data.customer_name || "Walk-in Customer", 120) || "Walk-in Customer",
+            cleanText(linkedCustomer && linkedCustomer.name || data.customer_name || "Walk-in Customer", 120) || "Walk-in Customer",
             cleanText(data.phone, 80),
             paymentMethod,
             subtotal,

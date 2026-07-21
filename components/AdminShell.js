@@ -3,7 +3,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260720-staff-permissions-1";
+const ASSET_VERSION = "20260721-product-customer-view-1";
 
 if (typeof window !== "undefined") {
   window.React = React;

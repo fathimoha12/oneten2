@@ -37,6 +37,11 @@ function itemKey(item) {
   return `${item.id}::${String(item.size || "").toUpperCase()}`;
 }
 
+function productImages(product) {
+  const images = [product && product.image, ...(Array.isArray(product && product.images) ? product.images : [])].filter(Boolean);
+  return [...new Set(images.length ? images : ["/assets/ai-products.png"])];
+}
+
 async function staffApi(path, options = {}) {
   const token = typeof window !== "undefined" ? localStorage.getItem("staffToken") : "";
   const response = await fetch(path, {
@@ -108,11 +113,15 @@ function Login({ onLogin, message, settings }) {
   );
 }
 
-function ProductCard({ product, onAdd }) {
+function ProductCard({ product, onAdd, onView }) {
   const sizes = Array.isArray(product.product_sizes) ? product.product_sizes.filter((item) => Number(item.stock) > 0) : [];
   return (
     <article className="pos-product-card">
-      <img src={assetUrl(product.image)} alt={product.name} />
+      <div className="pos-product-media">
+        <img src={assetUrl(productImages(product)[0])} alt={product.name} />
+        {product.badge && <span>{product.badge}</span>}
+        <button onClick={() => onView(product)} type="button">View</button>
+      </div>
       <div>
         <span>{product.category || "Product"}</span>
         <h3>{product.name}</h3>
@@ -128,6 +137,52 @@ function ProductCard({ product, onAdd }) {
       </div>
     </article>
   );
+}
+
+function ProductQuickView({ product, onAdd, onClose }) {
+  const [detail, setDetail] = useState(product);
+  const [activeImage, setActiveImage] = useState(productImages(product)[0]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setDetail(product);
+    setActiveImage(productImages(product)[0]);
+    setLoading(true);
+    staffApi(`/api/public/products/${product.id}`)
+      .then((payload) => {
+        if (!active || !payload.product) return;
+        setDetail(payload.product);
+        setActiveImage(productImages(payload.product)[0]);
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [product]);
+
+  const images = productImages(detail);
+  const sizes = Array.isArray(detail.product_sizes) ? detail.product_sizes.filter((item) => Number(item.stock) > 0) : [];
+  return <div className="pos-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label={`${detail.name} details`}>
+    <section className="pos-product-view" onClick={(event) => event.stopPropagation()}>
+      <button className="pos-product-view-close" onClick={onClose} type="button" aria-label="Close">×</button>
+      <div className="pos-product-view-gallery">
+        <img src={assetUrl(activeImage)} alt={detail.name} />
+        {images.length > 1 && <div>{images.map((image, index) => <button className={image === activeImage ? "active" : ""} key={`${image}-${index}`} onClick={() => setActiveImage(image)} type="button"><img src={assetUrl(image)} alt={`${detail.name} ${index + 1}`} /></button>)}</div>}
+      </div>
+      <div className="pos-product-view-copy">
+        <span>{detail.category || "Product"}</span>
+        <h2>{detail.name}</h2>
+        <div className="pos-product-view-price"><strong>{money(detail.price)}</strong>{detail.old_price && <del>{money(detail.old_price)}</del>}</div>
+        <p>{detail.description || "Product details and live store inventory."}</p>
+        <div className="pos-product-view-stock"><strong>{detail.stock} available</strong><span>Live online + in-store inventory</span></div>
+        <div className="pos-product-view-sizes">
+          {sizes.map((size) => <button key={size.size} onClick={() => { onAdd(detail, size.size); onClose(); }} type="button"><strong>{size.size}</strong><small>{size.stock} left</small></button>)}
+          {!sizes.length && <button onClick={() => { onAdd(detail, ""); onClose(); }} type="button"><strong>Add product</strong></button>}
+        </div>
+        {loading && <small className="pos-product-view-loading">Loading full gallery...</small>}
+      </div>
+    </section>
+  </div>;
 }
 
 function Receipt({ sale, settings, onClose }) {
@@ -180,9 +235,10 @@ function SaleWorkspace({ data, refresh, notify }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [cart, setCart] = useState([]);
-  const [customer, setCustomer] = useState({ name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+  const [customer, setCustomer] = useState({ id: "", name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState(null);
+  const [viewProduct, setViewProduct] = useState(null);
 
   const products = useMemo(() => (data.products || []).filter((product) => {
     const searchMatch = `${product.name} ${product.category || ""} ${product.id}`.toLowerCase().includes(query.trim().toLowerCase());
@@ -232,6 +288,7 @@ function SaleWorkspace({ data, refresh, notify }) {
       method: "POST",
       body: JSON.stringify({
         items: cart,
+        customer_id: customer.id || null,
         customer_name: customer.name || "Walk-in Customer",
         phone: customer.phone,
         payment_method: customer.payment_method,
@@ -242,7 +299,7 @@ function SaleWorkspace({ data, refresh, notify }) {
     }).then((payload) => {
       setReceipt(payload.sale);
       setCart([]);
-      setCustomer({ name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+      setCustomer({ id: "", name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
       notify(`${payload.sale.receipt_number} completed. Stock is now synced.`, "success");
       return refresh();
     }).catch((error) => notify(error.message, "error")).finally(() => setBusy(false));
@@ -260,7 +317,7 @@ function SaleWorkspace({ data, refresh, notify }) {
           {(data.categories || []).map((item) => <button className={String(category) === String(item.id) ? "active" : ""} key={item.id} onClick={() => setCategory(item.id)} type="button">{item.name}</button>)}
         </div>
         <div className="pos-product-grid">
-          {products.map((product) => <ProductCard key={product.id} product={product} onAdd={add} />)}
+          {products.map((product) => <ProductCard key={product.id} product={product} onAdd={add} onView={setViewProduct} />)}
           {!products.length && <div className="pos-empty"><h3>No products found</h3><p>Try a different name or category.</p></div>}
         </div>
       </section>
@@ -277,7 +334,11 @@ function SaleWorkspace({ data, refresh, notify }) {
           {!lines.length && <div className="pos-empty cart"><span>＋</span><h3>Sale is empty</h3><p>Select a product and size to begin.</p></div>}
         </div>
         <div className="pos-customer-fields">
-          <input value={customer.name} onChange={(event) => setCustomer({ ...customer, name: event.target.value })} placeholder="Customer name (optional)" />
+          {(data.customers || []).length > 0 && <select className="pos-customer-select" value={customer.id} onChange={(event) => {
+            const linked = (data.customers || []).find((item) => String(item.id) === String(event.target.value));
+            setCustomer({ ...customer, id: event.target.value, name: linked ? linked.name : "", phone: linked && linked.phone || "" });
+          }}><option value="">Walk-in / unregistered customer</option>{(data.customers || []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select>}
+          <input value={customer.name} onChange={(event) => setCustomer({ ...customer, id: "", name: event.target.value })} placeholder="Customer name (optional)" />
           <input value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value })} placeholder="Phone (optional)" />
           <div><select value={customer.payment_method} onChange={(event) => setCustomer({ ...customer, payment_method: event.target.value })}>{["Cash", "ZAAD", "eDahab", "Card", "Other"].map((method) => <option key={method}>{method}</option>)}</select><input min="0" step="0.01" type="number" value={customer.discount} onChange={(event) => setCustomer({ ...customer, discount: event.target.value })} placeholder="Discount" /></div>
           <input min="0" step="0.01" type="number" value={customer.amount_paid} onChange={(event) => setCustomer({ ...customer, amount_paid: event.target.value })} placeholder={`Amount paid · ${money(total)}`} />
@@ -287,6 +348,7 @@ function SaleWorkspace({ data, refresh, notify }) {
         <button className="pos-pay-button" disabled={busy || !lines.length} onClick={completeSale} type="button">{busy ? "Completing sale..." : `Complete Sale · ${money(total)}`}</button>
       </aside>
       <Receipt sale={receipt} settings={data.settings || {}} onClose={() => setReceipt(null)} />
+      {viewProduct && <ProductQuickView product={viewProduct} onAdd={add} onClose={() => setViewProduct(null)} />}
     </div>
   );
 }
@@ -334,12 +396,35 @@ function OnlineOrders({ data }) {
 }
 
 function Customers({ data }) {
-  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Customer directory</span><h2>Registered Customers</h2></div><strong>{(data.customers || []).length} accounts</strong></div><div className="pos-customer-grid">{(data.customers || []).map((customer) => <article key={customer.id}><span>{String(customer.name || "C").slice(0, 1).toUpperCase()}</span><div><strong>{customer.name}</strong><small>{customer.email}</small></div><div><b>{customer.order_count || 0}</b><small>orders</small></div><div><b>{money(customer.total_spent)}</b><small>spent</small></div></article>)}</div></section>;
+  const customers = data.customers || [];
+  const [selected, setSelected] = useState(null);
+  const topCustomer = customers.reduce((best, customer) => Number(customer.total_spent || 0) > Number(best && best.total_spent || 0) ? customer : best, null);
+  return <section className="pos-page-panel">
+    <div className="pos-page-heading"><div><span>Customer directory</span><h2>Registered Customers</h2></div><strong>{customers.length} accounts</strong></div>
+    {topCustomer && <button className="pos-top-customer" onClick={() => setSelected(topCustomer)} type="button"><span>{String(topCustomer.name || "C").slice(0, 1).toUpperCase()}</span><div><small>Top customer</small><strong>{topCustomer.name}</strong><em>{topCustomer.email || topCustomer.phone}</em></div><div><small>Lifetime spend</small><strong>{money(topCustomer.total_spent)}</strong><em>{topCustomer.order_count || 0} orders</em></div><b>View profile</b></button>}
+    <div className="pos-customer-grid">{customers.map((customer) => <button key={customer.id} onClick={() => setSelected(customer)} type="button"><span>{String(customer.name || "C").slice(0, 1).toUpperCase()}</span><div><strong>{customer.name}</strong><small>{customer.email}</small></div><div><b>{customer.order_count || 0}</b><small>orders</small></div><div><b>{money(customer.total_spent)}</b><small>spent</small></div><em>View</em></button>)}</div>
+    {selected && <PosCustomerDetail customer={selected} data={data} onClose={() => setSelected(null)} />}
+  </section>;
+}
+
+function PosCustomerDetail({ customer, data, onClose }) {
+  const orders = [...(data.online_orders || []), ...(data.pos_sales || [])].filter((order) => String(order.customer_id) === String(customer.id)).sort((a, b) => Number(b.id) - Number(a.id));
+  return <div className="pos-modal-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label={`${customer.name} profile`}>
+    <section className="pos-customer-detail" onClick={(event) => event.stopPropagation()}>
+      <button className="pos-product-view-close" onClick={onClose} type="button" aria-label="Close">×</button>
+      <div className="pos-customer-detail-hero"><span>{String(customer.name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer profile</small><h2>{customer.name}</h2><p>{customer.email || "No email"}</p></div></div>
+      <div className="pos-customer-detail-metrics"><div><span>Total spent</span><strong>{money(customer.total_spent)}</strong></div><div><span>Orders</span><strong>{customer.order_count || 0}</strong></div><div><span>Last order</span><strong>{customer.last_order_id ? `#${customer.last_order_id}` : "None"}</strong></div></div>
+      <dl><div><dt>Phone</dt><dd>{customer.phone || "Not available"}</dd></div><div><dt>Address</dt><dd>{customer.address || "Not available"}</dd></div><div><dt>Registered</dt><dd>{formatDate(customer.created_at)}</dd></div><div><dt>Last purchase</dt><dd>{formatDate(customer.last_order_at) || "Not available"}</dd></div></dl>
+      <div className="pos-customer-order-list"><h3>Recent purchases</h3>{orders.length ? orders.slice(0, 8).map((order) => <article key={`${order.source}-${order.id}`}><div><strong>{order.receipt_number || `Order #${order.id}`}</strong><span>{order.source === "pos" ? "In-store" : "Online"} · {formatDate(order.created_at)}</span></div><strong>{money(order.total)}</strong></article>) : <p>No accessible purchase records for this account.</p>}</div>
+    </section>
+  </div>;
 }
 
 function Reports({ data }) {
   const reports = data.reports || {};
-  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>All sales channels</span><h2>Sales Report</h2></div></div><div className="pos-report-cards"><article><span>POS revenue</span><strong>{money(reports.pos_revenue)}</strong><small>{reports.pos_sales || 0} completed in-store sales</small></article><article><span>Online revenue</span><strong>{money(reports.online_revenue)}</strong><small>{reports.online_sales || 0} website orders</small></article><article className="primary"><span>Combined revenue</span><strong>{money(reports.total_revenue)}</strong><small>One shared inventory</small></article></div><div className="pos-movement-list"><h3>Recent stock activity</h3>{(data.inventory_movements || []).map((movement) => <div key={movement.id}><span className={Number(movement.quantity_delta) > 0 ? "in" : "out"}>{Number(movement.quantity_delta) > 0 ? "+" : ""}{movement.quantity_delta}</span><div><strong>{movement.product_name}{movement.size ? ` / ${movement.size}` : ""}</strong><small>{movement.movement_type.replaceAll("_", " ")} · {movement.performed_by_name || movement.performed_by_type}</small></div><time>{formatDate(movement.created_at)}</time></div>)}</div></section>;
+  const [selected, setSelected] = useState(null);
+  const topCustomer = (data.customers || []).reduce((best, customer) => Number(customer.total_spent || 0) > Number(best && best.total_spent || 0) ? customer : best, null);
+  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>All sales channels</span><h2>Sales Report</h2></div></div><div className="pos-report-cards"><article><span>POS revenue</span><strong>{money(reports.pos_revenue)}</strong><small>{reports.pos_sales || 0} completed in-store sales</small></article><article><span>Online revenue</span><strong>{money(reports.online_revenue)}</strong><small>{reports.online_sales || 0} website orders</small></article><article className="primary"><span>Combined revenue</span><strong>{money(reports.total_revenue)}</strong><small>One shared inventory</small></article>{topCustomer && <button className="pos-report-top-customer" onClick={() => setSelected(topCustomer)} type="button"><span>Top customer</span><strong>{topCustomer.name}</strong><small>{money(topCustomer.total_spent)} · {topCustomer.order_count || 0} orders · View profile</small></button>}</div><div className="pos-movement-list"><h3>Recent stock activity</h3>{(data.inventory_movements || []).map((movement) => <div key={movement.id}><span className={Number(movement.quantity_delta) > 0 ? "in" : "out"}>{Number(movement.quantity_delta) > 0 ? "+" : ""}{movement.quantity_delta}</span><div><strong>{movement.product_name}{movement.size ? ` / ${movement.size}` : ""}</strong><small>{movement.movement_type.replaceAll("_", " ")} · {movement.performed_by_name || movement.performed_by_type}</small></div><time>{formatDate(movement.created_at)}</time></div>)}</div>{selected && <PosCustomerDetail customer={selected} data={data} onClose={() => setSelected(null)} />}</section>;
 }
 
 export default function PosPage() {

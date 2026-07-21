@@ -208,6 +208,7 @@ function AdminApp() {
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState("dashboard");
+  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], customers: [], subscribers: [], staff: [], permission_catalog: [], dashboard: {}, settings: {}, admin: {} });
 
   useEffect(() => {
@@ -243,6 +244,12 @@ function AdminApp() {
       setMessage(error.message);
       if (error.message.includes("Admin")) logout();
     });
+  }
+
+  function openCustomer(customerId) {
+    if (!customerId) return;
+    setSelectedCustomerId(customerId);
+    setTab("customers");
   }
 
   if (!token) {
@@ -289,7 +296,7 @@ function AdminApp() {
         React.createElement(Stat, { label: "Low Stock", value: data.dashboard.lowStock || 0 })
       ),
       message && React.createElement("div", { className: "admin-message" }, message),
-      tab === "dashboard" && React.createElement(DashboardHome, { data, setTab }),
+      tab === "dashboard" && React.createElement(DashboardHome, { data, setTab, onOpenCustomer: openCustomer }),
       tab === "products" && React.createElement(ProductsAdmin, { data, refresh, setMessage }),
       tab === "catalog" && React.createElement(CatalogTools, { data, refresh, setMessage }),
       tab === "categories" && React.createElement(CategoriesAdmin, { data, refresh, setMessage }),
@@ -298,8 +305,8 @@ function AdminApp() {
       tab === "settings" && React.createElement(SettingsAdmin, { data, refresh, setMessage }),
       tab === "staff" && React.createElement(StaffAdmin, { data, refresh, setMessage }),
       tab === "subscribers" && React.createElement(SubscribersAdmin, { data }),
-      tab === "customers" && React.createElement(CustomersAdmin, { data }),
-      tab === "orders" && React.createElement(OrdersAdmin, { data, refresh, setMessage }),
+      tab === "customers" && React.createElement(CustomersAdmin, { data, selectedCustomerId, onSelectCustomer: setSelectedCustomerId }),
+      tab === "orders" && React.createElement(OrdersAdmin, { data, refresh, setMessage, onOpenCustomer: openCustomer }),
       tab === "security" && React.createElement(SecurityAdmin, { data, refresh, setMessage })
     )
   );
@@ -309,7 +316,7 @@ function Stat({ label, value }) {
   return React.createElement("div", { className: "stat" }, React.createElement("span", null, label), React.createElement("strong", null, value));
 }
 
-function DashboardHome({ data, setTab }) {
+function DashboardHome({ data, setTab, onOpenCustomer }) {
   const products = data.products || [];
   const orders = data.orders || [];
   const activeCount = products.filter((product) => Number(product.active) === 1 && Number(product.stock || 0) > 0).length;
@@ -317,6 +324,7 @@ function DashboardHome({ data, setTab }) {
   const lowStock = products.filter((product) => Number(product.stock || 0) > 0 && Number(product.stock || 0) <= 3).length;
   const recentOrders = orders.slice(0, 5);
   const activePercent = products.length ? Math.round((activeCount / products.length) * 100) : 0;
+  const topCustomer = (data.customers || []).reduce((best, customer) => Number(customer.total_spent || 0) > Number(best && best.total_spent || 0) ? customer : best, null);
 
   return React.createElement("section", { className: "admin-dashboard" },
     React.createElement("div", { className: "dashboard-hero-card" },
@@ -355,6 +363,20 @@ function DashboardHome({ data, setTab }) {
             React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)
           )) : React.createElement("p", null, "No orders yet")
         )
+      ),
+      React.createElement("article", { className: "dashboard-panel top-customer-card" },
+        React.createElement("div", { className: "panel-head" }, React.createElement("strong", null, "Top Customer"), React.createElement("span", null, "Highest total spend")),
+        topCustomer ? React.createElement(React.Fragment, null,
+          React.createElement("div", { className: "top-customer-main" },
+            React.createElement("span", { className: "customer-avatar large" }, customerInitials(topCustomer.name)),
+            React.createElement("div", null, React.createElement("strong", null, topCustomer.name), React.createElement("span", null, topCustomer.email || "No email"), React.createElement("small", null, topCustomer.phone || "No phone yet"))
+          ),
+          React.createElement("div", { className: "top-customer-metrics" },
+            React.createElement("div", null, React.createElement("span", null, "Total spent"), React.createElement("strong", null, `$${Number(topCustomer.total_spent || 0).toFixed(2)}`)),
+            React.createElement("div", null, React.createElement("span", null, "Orders"), React.createElement("strong", null, Number(topCustomer.order_count || 0)))
+          ),
+          React.createElement("button", { className: "top-customer-view", onClick: () => onOpenCustomer(topCustomer.id), type: "button" }, "View Customer Profile")
+        ) : React.createElement("p", null, "Customer purchase data will appear here after the first order.")
       )
     )
   );
@@ -542,22 +564,32 @@ function ProductsAdmin({ data, refresh, setMessage }) {
   });
   const selectedProduct = selectedProductId ? (data.products || []).find((product) => String(product.id) === String(selectedProductId)) : null;
 
-  function ProductRow(product) {
+  function ProductCard(product) {
     const inventoryRows = normalizeProductSizes(product.product_sizes, product.stock);
     const inventoryTotal = inventoryRows.reduce((sum, item) => sum + Number(item.stock || 0), 0);
     const isPublic = Number(product.active) === 1 && inventoryTotal > 0;
-    const sizeText = inventoryRows.map((item) => `${item.size}:${item.stock}`).join(" / ");
-    return React.createElement("article", { className: `admin-row admin-row-clickable ${isPublic ? "is-public" : "is-inactive"}`, key: product.id, onClick: () => setSelectedProductId(product.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedProductId(product.id); }, role: "button", tabIndex: 0 },
-      React.createElement(ProductVisual, { src: getProductImages(product)[0], alt: product.name, className: "admin-row-product-visual", style: { objectPosition: product.crop || "center" } }),
-      React.createElement("div", null,
-        React.createElement("strong", null, product.name),
-        React.createElement("span", null, `${product.category} / $${product.price} / Stock ${inventoryTotal} / ${getProductImages(product).length} images`),
-        sizeText && React.createElement("span", { className: "admin-size-summary" }, sizeText),
-        React.createElement("em", { className: isPublic ? "product-state public" : "product-state inactive" }, isPublic ? "Public / Active" : inventoryTotal <= 0 ? "Inactive / Stock finished" : "Inactive / Hidden"),
-        (product.ai_prompts || []).length > 0 && React.createElement("em", { className: "product-state ai-ready" }, `AI ${product.ai_type || "style"} ready`)
+    const availableSizes = inventoryRows.filter((item) => Number(item.stock || 0) > 0);
+    return React.createElement("article", { className: `admin-product-card ${isPublic ? "is-public" : "is-inactive"}`, key: product.id },
+      React.createElement("button", { "aria-label": `View ${product.name}`, className: "admin-product-image", onClick: () => setSelectedProductId(product.id), type: "button" },
+        React.createElement(ProductVisual, { src: getProductImages(product)[0], alt: product.name, className: "admin-product-card-visual", style: { objectPosition: product.crop || "center" } }),
+        product.badge && React.createElement("span", { className: "admin-product-badge" }, product.badge),
+        React.createElement("span", { className: isPublic ? "admin-product-status active" : "admin-product-status inactive" }, isPublic ? "Active" : "Inactive")
       ),
-      React.createElement("button", { onClick: (event) => { event.stopPropagation(); edit(product); }, type: "button" }, "Edit"),
-      React.createElement("button", { onClick: (event) => { event.stopPropagation(); remove(product.id); }, type: "button" }, "Delete")
+      React.createElement("div", { className: "admin-product-card-body" },
+        React.createElement("span", { className: "admin-product-category" }, product.category || "Uncategorized"),
+        React.createElement("h3", null, product.name),
+        React.createElement("div", { className: "admin-product-price" }, React.createElement("strong", null, `$${Number(product.price || 0).toFixed(2)}`), product.old_price && React.createElement("del", null, `$${Number(product.old_price).toFixed(2)}`)),
+        React.createElement("div", { className: "admin-product-inventory" },
+          React.createElement("span", null, `${inventoryTotal} in stock`),
+          React.createElement("span", null, `${getProductImages(product).length} ${getProductImages(product).length === 1 ? "image" : "images"}`)
+        ),
+        React.createElement("div", { className: "admin-product-sizes" }, availableSizes.length ? availableSizes.slice(0, 5).map((item) => React.createElement("span", { key: item.size }, item.size, React.createElement("small", null, item.stock))) : React.createElement("span", { className: "sold-out" }, "Out of stock")),
+        React.createElement("div", { className: "admin-product-actions" },
+          React.createElement("button", { className: "view", onClick: () => setSelectedProductId(product.id), type: "button" }, "View"),
+          React.createElement("button", { onClick: () => edit(product), type: "button" }, "Edit"),
+          React.createElement("button", { className: "delete", onClick: () => remove(product.id), type: "button" }, "Delete")
+        )
+      ),
     );
   }
 
@@ -620,7 +652,7 @@ function ProductsAdmin({ data, refresh, setMessage }) {
       ),
       React.createElement("div", { className: `product-admin-section ${productView === "inactive" ? "inactive" : ""}` },
         React.createElement("div", { className: "product-admin-head" }, React.createElement("strong", null, productView === "active" ? "Public / active page" : "Inactive / hidden page"), React.createElement("span", null, `${visibleProducts.length} showing`)),
-        visibleProducts.length ? visibleProducts.map(ProductRow) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, productQuery ? "No matching products" : productView === "active" ? "No active products" : "No inactive products"))
+        React.createElement("div", { className: "admin-product-card-grid" }, visibleProducts.length ? visibleProducts.map(ProductCard) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, productQuery ? "No matching products" : productView === "active" ? "No active products" : "No inactive products")))
       )
     ),
     selectedProduct && React.createElement(ProductDetailDrawer, { product: selectedProduct, onClose: () => setSelectedProductId(null), onEdit: edit })
@@ -1163,9 +1195,8 @@ function SubscribersAdmin({ data }) {
   );
 }
 
-function CustomersAdmin({ data }) {
+function CustomersAdmin({ data, selectedCustomerId, onSelectCustomer }) {
   const [query, setQuery] = useState("");
-  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const customers = data.customers || [];
   const normalizedQuery = query.trim().toLowerCase();
   const visibleCustomers = customers.filter((customer) => !normalizedQuery || [customer.name, customer.email, customer.phone, customer.address, customer.id]
@@ -1173,15 +1204,22 @@ function CustomersAdmin({ data }) {
     .some((value) => String(value).toLowerCase().includes(normalizedQuery)));
   const selectedCustomer = selectedCustomerId ? customers.find((customer) => String(customer.id) === String(selectedCustomerId)) : null;
   const customerOrders = selectedCustomer ? (data.orders || []).filter((order) => String(order.customer_id) === String(selectedCustomer.id)) : [];
+  const topCustomer = customers.reduce((best, customer) => Number(customer.total_spent || 0) > Number(best && best.total_spent || 0) ? customer : best, null);
 
   return React.createElement("section", { className: "admin-table customer-board" },
     React.createElement("div", { className: "customer-board-head" },
       React.createElement("div", null, React.createElement("span", null, "Customer directory"), React.createElement("h2", null, "Registered Customers")),
       React.createElement("strong", null, `${customers.length} accounts`)
     ),
+    topCustomer && React.createElement("button", { className: "customer-top-spotlight", onClick: () => onSelectCustomer(topCustomer.id), type: "button" },
+      React.createElement("span", { className: "customer-avatar large" }, customerInitials(topCustomer.name)),
+      React.createElement("div", { className: "customer-top-copy" }, React.createElement("small", null, "Top customer"), React.createElement("strong", null, topCustomer.name), React.createElement("span", null, topCustomer.email || topCustomer.phone || "Customer profile")),
+      React.createElement("div", { className: "customer-top-total" }, React.createElement("small", null, "Lifetime spend"), React.createElement("strong", null, `$${Number(topCustomer.total_spent || 0).toFixed(2)}`), React.createElement("span", null, `${Number(topCustomer.order_count || 0)} orders`)),
+      React.createElement("em", null, "View profile")
+    ),
     React.createElement("div", { className: "customer-search" }, React.createElement("input", { onChange: (event) => setQuery(event.target.value), placeholder: "Search name, email, phone or address...", value: query })),
     React.createElement("div", { className: "customer-list" },
-      visibleCustomers.length ? visibleCustomers.map((customer) => React.createElement("article", { className: "customer-row", key: customer.id, onClick: () => setSelectedCustomerId(customer.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedCustomerId(customer.id); }, role: "button", tabIndex: 0 },
+      visibleCustomers.length ? visibleCustomers.map((customer) => React.createElement("article", { className: "customer-row", key: customer.id, onClick: () => onSelectCustomer(customer.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") onSelectCustomer(customer.id); }, role: "button", tabIndex: 0 },
         React.createElement("span", { className: "customer-avatar" }, customerInitials(customer.name)),
         React.createElement("div", { className: "customer-main" }, React.createElement("strong", null, customer.name), React.createElement("span", null, customer.email), React.createElement("small", null, customer.phone || "No checkout phone yet")),
         React.createElement("div", { className: "customer-row-stat" }, React.createElement("span", null, "Orders"), React.createElement("strong", null, Number(customer.order_count || 0))),
@@ -1189,7 +1227,7 @@ function CustomersAdmin({ data }) {
         React.createElement("span", { className: "row-open-label" }, "View details")
       )) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, query ? "No matching customers" : "No customers registered yet"))
     ),
-    selectedCustomer && React.createElement(CustomerDetailDrawer, { customer: selectedCustomer, orders: customerOrders, onClose: () => setSelectedCustomerId(null) })
+    selectedCustomer && React.createElement(CustomerDetailDrawer, { customer: selectedCustomer, orders: customerOrders, onClose: () => onSelectCustomer(null) })
   );
 }
 
@@ -1227,7 +1265,7 @@ function CustomerDetailDrawer({ customer, orders, onClose }) {
   );
 }
 
-function OrdersAdmin({ data, refresh, setMessage }) {
+function OrdersAdmin({ data, refresh, setMessage, onOpenCustomer }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null);
   const selectedOrder = selectedOrderId ? (data.orders || []).find((order) => String(order.id) === String(selectedOrderId)) : null;
   const selectedCustomer = selectedOrder ? (data.customers || []).find((customer) => String(customer.id) === String(selectedOrder.customer_id)) : null;
@@ -1259,11 +1297,11 @@ function OrdersAdmin({ data, refresh, setMessage }) {
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Total"), React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)),
       React.createElement("span", { className: "row-open-label" }, "Open order")
     )) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, "No orders yet")),
-    selectedOrder && React.createElement(AdminOrderDrawer, { customer: selectedCustomer, onClose: () => setSelectedOrderId(null), onUpdateItem: updateItem, onUpdateOrder: update, order: selectedOrder })
+    selectedOrder && React.createElement(AdminOrderDrawer, { customer: selectedCustomer, onClose: () => setSelectedOrderId(null), onOpenCustomer, onUpdateItem: updateItem, onUpdateOrder: update, order: selectedOrder })
   );
 }
 
-function AdminOrderDrawer({ order, customer, onClose, onUpdateItem, onUpdateOrder }) {
+function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateItem, onUpdateOrder }) {
   return React.createElement(React.Fragment, null,
     React.createElement("button", { "aria-label": "Close order details", className: "admin-drawer-backdrop", onClick: onClose, type: "button" }),
     React.createElement("aside", { "aria-label": `Order ${order.id} details`, "aria-modal": "true", className: "admin-detail-drawer order-detail-drawer", role: "dialog" },
@@ -1272,7 +1310,7 @@ function AdminOrderDrawer({ order, customer, onClose, onUpdateItem, onUpdateOrde
         React.createElement("button", { "aria-label": "Close", className: "drawer-close", onClick: onClose, type: "button" }, "\u00d7")
       ),
       React.createElement("div", { className: "admin-drawer-scroll" },
-        React.createElement("div", { className: "order-customer-summary" }, React.createElement("span", { className: "customer-avatar" }, customerInitials(order.customer_name)), React.createElement("div", null, React.createElement("strong", null, order.customer_name), React.createElement("span", null, customer && customer.email ? customer.email : "Email unavailable"), React.createElement("small", null, order.phone || "No phone"))),
+        React.createElement("div", { className: "order-customer-summary" }, React.createElement("span", { className: "customer-avatar" }, customerInitials(order.customer_name)), React.createElement("div", null, React.createElement("strong", null, order.customer_name), React.createElement("span", null, customer && customer.email ? customer.email : "Email unavailable"), React.createElement("small", null, order.phone || "No phone")), customer && React.createElement("button", { onClick: () => onOpenCustomer(customer.id), type: "button" }, "View customer profile")),
         React.createElement("dl", { className: "drawer-details-list" },
           React.createElement("div", null, React.createElement("dt", null, "Delivery address"), React.createElement("dd", null, order.address || "Not provided")),
           React.createElement("div", null, React.createElement("dt", null, "Placed"), React.createElement("dd", null, formatAdminDate(order.created_at))),
