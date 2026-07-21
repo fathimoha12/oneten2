@@ -426,8 +426,11 @@
 @media print {
   body * { visibility: hidden !important; }
   .print-receipt,
-  .print-receipt * { visibility: visible !important; }
+  .print-receipt *,
+  .pos-report-print,
+  .pos-report-print * { visibility: visible !important; }
   .print-receipt { left: 0; max-width: 80mm; min-height: 0; padding: 4mm; position: absolute; top: 0; width: 80mm; }
+  .pos-report-print { background: #ffffff; color: #111111; left: 0; position: absolute; top: 0; width: 100%; }
   .no-print { display: none !important; }
   @page { margin: 0; size: 80mm auto; }
 }
@@ -586,6 +589,326 @@ img {
   .site-loader-rings {
     height: 300px;
     width: 190px;
+  }
+}
+
+/* Stable app-like viewport and detailed printable reporting. */
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  touch-action: manipulation;
+}
+
+.branch-settings-field {
+  background: #f6fbfa;
+  border: 1px solid #dbe9e5;
+  border-radius: 12px;
+  display: grid;
+  gap: 7px;
+  padding: 14px;
+}
+
+.branch-settings-field span {
+  color: #61736e;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.branch-settings-field textarea {
+  min-height: 100px;
+}
+
+.pos-sale-context {
+  grid-template-columns: 1fr 1fr !important;
+}
+
+.pos-sale-context label {
+  display: grid;
+  gap: 4px;
+}
+
+.pos-sale-context label > span {
+  color: #777e87;
+  font-size: 8px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pos-print-report {
+  background: #101114;
+  border: 0;
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 950;
+  min-height: 42px;
+  padding: 0 16px;
+}
+
+.pos-report-filters {
+  background: #ffffff;
+  border: 1px solid #e2e4e8;
+  border-radius: 14px;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-bottom: 16px;
+  padding: 14px;
+}
+
+.pos-report-filters label {
+  display: grid;
+  gap: 5px;
+}
+
+.pos-report-filters span {
+  color: #777e87;
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pos-report-filters select {
+  background: #f5f6f8;
+  border: 1px solid #e0e3e7;
+  border-radius: 9px;
+  font-size: 10px;
+  min-height: 42px;
+  padding: 0 10px;
+  width: 100%;
+}
+
+.pos-report-print {
+  display: grid;
+  gap: 15px;
+}
+
+.pos-print-heading {
+  align-items: end;
+  background: #ffffff;
+  border: 1px solid #e2e4e8;
+  border-radius: 14px;
+  display: grid;
+  gap: 5px 18px;
+  grid-template-columns: auto 1fr auto;
+  padding: 16px 18px;
+}
+
+.pos-print-heading > div {
+  display: grid;
+}
+
+.pos-print-heading > div strong {
+  color: #f20d14;
+  font-size: 20px;
+  letter-spacing: -0.04em;
+}
+
+.pos-print-heading > div span {
+  color: #101114;
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.pos-print-heading p,
+.pos-print-heading small {
+  color: #777e87;
+  font-size: 9px;
+  margin: 0;
+}
+
+.pos-print-heading small {
+  text-align: right;
+}
+
+.pos-report-cards.detailed {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.pos-channel-report {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.pos-channel-report article {
+  background: #101114;
+  border-left: 4px solid #f20d14;
+  border-radius: 12px;
+  color: #ffffff;
+  display: grid;
+  gap: 6px;
+  padding: 16px;
+}
+
+.pos-channel-report span {
+  color: #ff6268;
+  font-size: 9px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pos-channel-report strong {
+  font-size: 21px;
+}
+
+.pos-channel-report small {
+  color: #b8bdc4;
+  font-size: 9px;
+}
+
+.pos-report-table {
+  background: #ffffff;
+  border: 1px solid #e2e4e8;
+  border-radius: 14px;
+  overflow: hidden;
+}
+
+.pos-report-table h3 {
+  border-bottom: 1px solid #e7e9ec;
+  font-size: 14px;
+  margin: 0;
+  padding: 15px 17px;
+}
+
+.pos-report-table > div {
+  overflow-x: auto;
+}
+
+.pos-report-table table {
+  border-collapse: collapse;
+  min-width: 680px;
+  width: 100%;
+}
+
+.pos-report-table th,
+.pos-report-table td {
+  border-bottom: 1px solid #eceef1;
+  font-size: 9px;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+.pos-report-table th {
+  background: #f4f5f7;
+  color: #747b85;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+
+.pos-report-table td {
+  color: #25282d;
+  font-weight: 750;
+}
+
+.pos-report-table td:last-child {
+  color: #f20d14;
+  font-weight: 950;
+}
+
+.pos-report-table > p {
+  color: #858b95;
+  font-size: 10px;
+  margin: 0;
+  padding: 18px;
+}
+
+@media (max-width: 900px) {
+  .pos-report-filters,
+  .pos-report-cards.detailed {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .pos-print-heading {
+    align-items: start;
+    grid-template-columns: 1fr auto;
+  }
+
+  .pos-print-heading p {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 560px) {
+  input,
+  select,
+  textarea,
+  .pos-catalog-toolbar input,
+  .pos-page-heading input,
+  .pos-customer-fields input,
+  .pos-customer-fields select,
+  .pos-customer-fields textarea,
+  .pos-report-filters select {
+    font-size: 16px !important;
+  }
+
+  .pos-sale-context,
+  .pos-report-filters,
+  .pos-report-cards.detailed,
+  .pos-channel-report {
+    grid-template-columns: 1fr !important;
+  }
+
+  .pos-print-heading {
+    grid-template-columns: 1fr;
+  }
+
+  .pos-print-heading small {
+    text-align: left;
+  }
+}
+
+@media print {
+  body.printing-report {
+    background: #ffffff !important;
+  }
+
+  body.printing-report .pos-report-print {
+    display: block;
+    font-family: Arial, sans-serif;
+  }
+
+  body.printing-report .pos-print-heading,
+  body.printing-report .pos-report-cards,
+  body.printing-report .pos-channel-report,
+  body.printing-report .pos-report-table {
+    break-inside: avoid;
+    box-shadow: none;
+    margin-bottom: 10px;
+  }
+
+  body.printing-report .pos-print-heading,
+  body.printing-report .pos-report-cards article,
+  body.printing-report .pos-channel-report article,
+  body.printing-report .pos-report-table {
+    border-color: #bfc3c8;
+  }
+
+  body.printing-report .pos-report-cards.detailed {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  body.printing-report .pos-channel-report {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  body.printing-report .pos-report-table table {
+    min-width: 0;
+  }
+
+  body.printing-report .pos-report-table th,
+  body.printing-report .pos-report-table td {
+    font-size: 8pt;
+    padding: 5px 7px;
   }
 }
 

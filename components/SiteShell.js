@@ -4,7 +4,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260720-pos-stock-sync-1";
+const ASSET_VERSION = "20260721-fixed-viewport-reports-1";
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://oneten2.vercel.app").replace(/\/$/, "");
 const BRAND_ICON_URL = `${SITE_URL}/assets/one-ten-app-icon.png`;
 const loaderSeenScript = `
@@ -54,7 +54,7 @@ export default function SiteShell({
     <>
       <Head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <meta name="theme-color" content="#f20d14" />
         <meta name="description" content={description} />
         <meta name="application-name" content="ONE TEN" />

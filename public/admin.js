@@ -182,6 +182,16 @@ function customerInitials(name) {
   return String(name || "Customer").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase() || "C";
 }
 
+function preferredCustomerChannel(customer) {
+  const channels = [
+    ["website", Number(customer && customer.website_orders || 0)],
+    ["external_online", Number(customer && customer.external_online_orders || 0)],
+    ["store", Number(customer && customer.store_orders || 0)],
+  ].sort((a, b) => b[1] - a[1]);
+  const key = channels[0] && channels[0][1] > 0 ? channels[0][0] : "website";
+  return key === "external_online" ? "Online outside website" : key === "store" ? "In-store" : "Website";
+}
+
 const aiProductTypes = [
   ["top", "Shirt / upper garment"],
   ["pants", "Pants / lower garment"],
@@ -873,6 +883,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
     whatsapp_number: settings.whatsapp_number || "0633454984",
     email: settings.email || "",
     location: settings.location || "",
+    branches: (Array.isArray(settings.branches) && settings.branches.length ? settings.branches : ["Main Branch"]).join("\n"),
     information_links: cleanLinks(settings.information_links, defaultInformationLinks),
     department_links: cleanLinks(settings.department_links, defaultDepartmentLinks),
   });
@@ -893,6 +904,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
       whatsapp_number: settings.whatsapp_number || "0633454984",
       email: settings.email || "",
       location: settings.location || "",
+      branches: (Array.isArray(settings.branches) && settings.branches.length ? settings.branches : ["Main Branch"]).join("\n"),
       information_links: cleanLinks(settings.information_links, defaultInformationLinks),
       department_links: cleanLinks(settings.department_links, defaultDepartmentLinks),
     });
@@ -939,6 +951,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
       whatsapp_number: form.whatsapp_number,
       email: form.email,
       location: form.location,
+      branches: [...new Set(String(form.branches || "").split(/[\n,]+/).map((branch) => branch.trim()).filter(Boolean))],
       information_links: form.information_links.filter((link) => link.label.trim() && link.href.trim()),
       department_links: form.department_links.filter((link) => link.label.trim() && link.href.trim()),
     };
@@ -1000,6 +1013,7 @@ function SettingsAdmin({ data, refresh, setMessage }) {
         React.createElement("input", { value: form.email, onChange: (event) => setForm({ ...form, email: event.target.value }), placeholder: "Email" }),
         React.createElement("input", { value: form.location, onChange: (event) => setForm({ ...form, location: event.target.value }), placeholder: "Location" })
       ),
+      React.createElement("label", { className: "branch-settings-field" }, React.createElement("strong", null, "Store branches"), React.createElement("span", null, "Add one branch per line. These branches appear in the POS and printable reports."), React.createElement("textarea", { value: form.branches, onChange: (event) => setForm({ ...form, branches: event.target.value }), placeholder: "Main Branch\nSecond Branch" })),
       React.createElement("textarea", { value: form.footer_text, onChange: (event) => setForm({ ...form, footer_text: event.target.value }), placeholder: "Footer text" }),
       React.createElement(LinkEditor, { title: "Information links", listName: "information_links" }),
       React.createElement(LinkEditor, { title: "Shop departments", listName: "department_links" }),
@@ -1221,7 +1235,7 @@ function CustomersAdmin({ data, selectedCustomerId, onSelectCustomer }) {
     React.createElement("div", { className: "customer-list" },
       visibleCustomers.length ? visibleCustomers.map((customer) => React.createElement("article", { className: "customer-row", key: customer.id, onClick: () => onSelectCustomer(customer.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") onSelectCustomer(customer.id); }, role: "button", tabIndex: 0 },
         React.createElement("span", { className: "customer-avatar" }, customerInitials(customer.name)),
-        React.createElement("div", { className: "customer-main" }, React.createElement("strong", null, customer.name), React.createElement("span", null, customer.email), React.createElement("small", null, customer.phone || "No checkout phone yet")),
+        React.createElement("div", { className: "customer-main" }, React.createElement("strong", null, customer.name), React.createElement("span", null, customer.email), React.createElement("small", null, `${customer.phone || "No checkout phone yet"} / Prefers ${preferredCustomerChannel(customer)}`)),
         React.createElement("div", { className: "customer-row-stat" }, React.createElement("span", null, "Orders"), React.createElement("strong", null, Number(customer.order_count || 0))),
         React.createElement("div", { className: "customer-row-stat" }, React.createElement("span", null, "Spent"), React.createElement("strong", null, `$${Number(customer.total_spent || 0).toFixed(2)}`)),
         React.createElement("span", { className: "row-open-label" }, "View details")
@@ -1244,7 +1258,8 @@ function CustomerDetailDrawer({ customer, orders, onClose }) {
         React.createElement("div", { className: "drawer-metrics" },
           React.createElement("div", null, React.createElement("span", null, "Orders"), React.createElement("strong", null, Number(customer.order_count || orders.length || 0))),
           React.createElement("div", null, React.createElement("span", null, "Total spent"), React.createElement("strong", null, `$${Number(customer.total_spent || 0).toFixed(2)}`)),
-          React.createElement("div", null, React.createElement("span", null, "Last order"), React.createElement("strong", null, customer.last_order_id ? `#${customer.last_order_id}` : "None"))
+          React.createElement("div", null, React.createElement("span", null, "Last order"), React.createElement("strong", null, customer.last_order_id ? `#${customer.last_order_id}` : "None")),
+          React.createElement("div", null, React.createElement("span", null, "Preferred channel"), React.createElement("strong", null, preferredCustomerChannel(customer)))
         ),
         React.createElement("dl", { className: "drawer-details-list" },
           React.createElement("div", null, React.createElement("dt", null, "Email"), React.createElement("dd", null, customer.email || "Not provided")),
@@ -1291,7 +1306,7 @@ function OrdersAdmin({ data, refresh, setMessage, onOpenCustomer }) {
   return React.createElement("section", { className: "admin-table orders orders-board" },
     React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Online + in-store"), React.createElement("h2", null, "All Sales & Orders")), React.createElement("strong", null, `${(data.orders || []).length} records`)),
     (data.orders || []).length ? data.orders.map((order) => React.createElement("article", { className: "order-row order-row-clickable", key: order.id, onClick: () => setSelectedOrderId(order.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedOrderId(order.id); }, role: "button", tabIndex: 0 },
-      React.createElement("div", { className: "order-row-id" }, React.createElement("strong", null, order.receipt_number || `#${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing"), React.createElement("small", null, order.source === "pos" ? "In-store POS" : "Online")),
+      React.createElement("div", { className: "order-row-id" }, React.createElement("strong", null, order.receipt_number || `#${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing"), React.createElement("small", null, order.sales_channel === "external_online" ? "Online outside website" : order.source === "pos" ? "In-store POS" : "Website")),
       React.createElement("div", { className: "order-row-customer" }, React.createElement("strong", null, order.customer_name), React.createElement("span", null, order.phone || "No phone"), React.createElement("small", null, order.address || "No address")),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Product lines"), React.createElement("strong", null, Number(order.items || (order.order_items || []).length))),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Total"), React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)),
@@ -1314,7 +1329,8 @@ function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateIt
         React.createElement("dl", { className: "drawer-details-list" },
           React.createElement("div", null, React.createElement("dt", null, "Delivery address"), React.createElement("dd", null, order.address || "Not provided")),
           React.createElement("div", null, React.createElement("dt", null, "Placed"), React.createElement("dd", null, formatAdminDate(order.created_at))),
-          React.createElement("div", null, React.createElement("dt", null, "Sales channel"), React.createElement("dd", null, order.source === "pos" ? `POS / ${order.payment_method || "Payment"}` : "Online store")),
+          React.createElement("div", null, React.createElement("dt", null, "Sales channel"), React.createElement("dd", null, order.sales_channel === "external_online" ? "Online outside website" : order.source === "pos" ? "In-store" : "Website")),
+          React.createElement("div", null, React.createElement("dt", null, "Branch"), React.createElement("dd", null, order.branch || (order.source === "pos" ? "Main Branch" : "Online Store"))),
           order.receipt_number && React.createElement("div", null, React.createElement("dt", null, "Receipt"), React.createElement("dd", null, order.receipt_number)),
           React.createElement("div", null, React.createElement("dt", null, "Product lines"), React.createElement("dd", null, Number(order.items || (order.order_items || []).length))),
           React.createElement("div", null, React.createElement("dt", null, "Order total"), React.createElement("dd", null, `$${Number(order.total || 0).toFixed(2)}`))

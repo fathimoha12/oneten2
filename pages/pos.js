@@ -13,6 +13,7 @@ const emptyData = {
   online_orders: [],
   customers: [],
   reports: {},
+  report_orders: [],
   inventory_movements: [],
   settings: {},
 };
@@ -31,6 +32,26 @@ function formatDate(value) {
   if (!value) return "";
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? String(value) : date.toLocaleString();
+}
+
+function salesChannel(order) {
+  return order && order.sales_channel || (order && order.source === "pos" ? "store" : "website");
+}
+
+function salesChannelLabel(value) {
+  return value === "external_online" ? "Online Outside Website" : value === "store" ? "In-store" : "Website";
+}
+
+function customerReportKey(order) {
+  if (order && order.customer_id) return `customer:${order.customer_id}`;
+  const phone = String(order && order.phone || "").replace(/\D/g, "");
+  if (phone) return `phone:${phone}`;
+  return `name:${String(order && order.customer_name || "Walk-in Customer").trim().toLowerCase()}`;
+}
+
+function preferredCustomerChannel(customer) {
+  const channels = [["website", Number(customer && customer.website_orders || 0)], ["external_online", Number(customer && customer.external_online_orders || 0)], ["store", Number(customer && customer.store_orders || 0)]].sort((a, b) => b[1] - a[1]);
+  return channels[0] && channels[0][1] > 0 ? channels[0][0] : "website";
 }
 
 function itemKey(item) {
@@ -205,6 +226,8 @@ function Receipt({ sale, settings, onClose }) {
             <div><dt>Date</dt><dd>{formatDate(sale.created_at)}</dd></div>
             <div><dt>Cashier</dt><dd>{sale.staff_name || "Staff"}</dd></div>
             <div><dt>Customer</dt><dd>{sale.customer_name || "Walk-in Customer"}</dd></div>
+            <div><dt>Channel</dt><dd>{salesChannelLabel(salesChannel(sale))}</dd></div>
+            <div><dt>Branch</dt><dd>{sale.branch || (sale.source === "pos" ? "Main Branch" : "Online Store")}</dd></div>
           </dl>
           <div className="receipt-rule" />
           <div className="receipt-lines">
@@ -235,7 +258,7 @@ function SaleWorkspace({ data, refresh, notify }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [cart, setCart] = useState([]);
-  const [customer, setCustomer] = useState({ id: "", name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+  const [customer, setCustomer] = useState({ id: "", name: "", phone: "", branch: "", sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [viewProduct, setViewProduct] = useState(null);
@@ -255,6 +278,7 @@ function SaleWorkspace({ data, refresh, notify }) {
   const total = Number((subtotal - discount).toFixed(2));
   const paid = customer.amount_paid === "" ? total : Math.max(0, Number(customer.amount_paid) || 0);
   const change = Math.max(0, paid - total);
+  const branches = Array.isArray(data.settings && data.settings.branches) && data.settings.branches.length ? data.settings.branches : ["Main Branch"];
 
   function sizeStock(product, size) {
     const sizes = Array.isArray(product.product_sizes) ? product.product_sizes : [];
@@ -291,6 +315,8 @@ function SaleWorkspace({ data, refresh, notify }) {
         customer_id: customer.id || null,
         customer_name: customer.name || "Walk-in Customer",
         phone: customer.phone,
+        branch: customer.branch || branches[0],
+        sales_channel: customer.sales_channel,
         payment_method: customer.payment_method,
         discount,
         amount_paid: paid,
@@ -299,7 +325,7 @@ function SaleWorkspace({ data, refresh, notify }) {
     }).then((payload) => {
       setReceipt(payload.sale);
       setCart([]);
-      setCustomer({ id: "", name: "", phone: "", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+      setCustomer({ id: "", name: "", phone: "", branch: branches[0], sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
       notify(`${payload.sale.receipt_number} completed. Stock is now synced.`, "success");
       return refresh();
     }).catch((error) => notify(error.message, "error")).finally(() => setBusy(false));
@@ -334,6 +360,7 @@ function SaleWorkspace({ data, refresh, notify }) {
           {!lines.length && <div className="pos-empty cart"><span>＋</span><h3>Sale is empty</h3><p>Select a product and size to begin.</p></div>}
         </div>
         <div className="pos-customer-fields">
+          <div className="pos-sale-context"><label><span>Sales channel</span><select value={customer.sales_channel} onChange={(event) => setCustomer({ ...customer, sales_channel: event.target.value })}><option value="store">In-store / customer visited</option><option value="external_online">Online outside website</option></select></label><label><span>Branch</span><select value={customer.branch || branches[0]} onChange={(event) => setCustomer({ ...customer, branch: event.target.value })}>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></label></div>
           {(data.customers || []).length > 0 && <select className="pos-customer-select" value={customer.id} onChange={(event) => {
             const linked = (data.customers || []).find((item) => String(item.id) === String(event.target.value));
             setCustomer({ ...customer, id: event.target.value, name: linked ? linked.name : "", phone: linked && linked.phone || "" });
@@ -357,7 +384,7 @@ function History({ data, refresh, notify }) {
   const [receipt, setReceipt] = useState(null);
   const [query, setQuery] = useState("");
   const canVoid = (data.permissions || []).includes("pos.void");
-  const sales = (data.pos_sales || []).filter((sale) => `${sale.receipt_number} ${sale.customer_name} ${sale.staff_name} ${sale.payment_method}`.toLowerCase().includes(query.toLowerCase()));
+  const sales = (data.pos_sales || []).filter((sale) => `${sale.receipt_number} ${sale.customer_name} ${sale.staff_name} ${sale.payment_method} ${sale.branch || ""} ${salesChannelLabel(salesChannel(sale))}`.toLowerCase().includes(query.toLowerCase()));
 
   function voidSale(sale) {
     const reason = window.prompt(`Reason for voiding ${sale.receipt_number}?`);
@@ -372,7 +399,7 @@ function History({ data, refresh, notify }) {
       <div className="pos-page-heading"><div><span>Receipts & returns</span><h2>In-store Sale History</h2></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search receipt, customer or cashier..." /></div>
       <div className="pos-history-list">
         {sales.map((sale) => <article key={sale.id}>
-          <div className="pos-history-status"><span className={sale.status === "Cancelled" ? "void" : "paid"}>{sale.status === "Cancelled" ? "Voided" : "Paid"}</span><small>{sale.payment_method}</small></div>
+          <div className="pos-history-status"><span className={sale.status === "Cancelled" ? "void" : "paid"}>{sale.status === "Cancelled" ? "Voided" : "Paid"}</span><small>{salesChannelLabel(salesChannel(sale))} · {sale.branch || "Main Branch"}</small></div>
           <div><strong>{sale.receipt_number}</strong><span>{formatDate(sale.created_at)}</span></div>
           <div><strong>{sale.customer_name || "Walk-in Customer"}</strong><span>Cashier: {sale.staff_name || "Staff"}</span></div>
           <div><strong>{money(sale.total)}</strong><span>{(sale.order_items || []).length} lines</span></div>
@@ -413,18 +440,121 @@ function PosCustomerDetail({ customer, data, onClose }) {
     <section className="pos-customer-detail" onClick={(event) => event.stopPropagation()}>
       <button className="pos-product-view-close" onClick={onClose} type="button" aria-label="Close">×</button>
       <div className="pos-customer-detail-hero"><span>{String(customer.name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer profile</small><h2>{customer.name}</h2><p>{customer.email || "No email"}</p></div></div>
-      <div className="pos-customer-detail-metrics"><div><span>Total spent</span><strong>{money(customer.total_spent)}</strong></div><div><span>Orders</span><strong>{customer.order_count || 0}</strong></div><div><span>Last order</span><strong>{customer.last_order_id ? `#${customer.last_order_id}` : "None"}</strong></div></div>
+      <div className="pos-customer-detail-metrics"><div><span>Total spent</span><strong>{money(customer.total_spent)}</strong></div><div><span>Orders</span><strong>{customer.order_count || 0}</strong></div><div><span>Last order</span><strong>{customer.last_order_id ? `#${customer.last_order_id}` : "None"}</strong></div><div><span>Preferred channel</span><strong>{salesChannelLabel(preferredCustomerChannel(customer))}</strong></div></div>
       <dl><div><dt>Phone</dt><dd>{customer.phone || "Not available"}</dd></div><div><dt>Address</dt><dd>{customer.address || "Not available"}</dd></div><div><dt>Registered</dt><dd>{formatDate(customer.created_at)}</dd></div><div><dt>Last purchase</dt><dd>{formatDate(customer.last_order_at) || "Not available"}</dd></div></dl>
-      <div className="pos-customer-order-list"><h3>Recent purchases</h3>{orders.length ? orders.slice(0, 8).map((order) => <article key={`${order.source}-${order.id}`}><div><strong>{order.receipt_number || `Order #${order.id}`}</strong><span>{order.source === "pos" ? "In-store" : "Online"} · {formatDate(order.created_at)}</span></div><strong>{money(order.total)}</strong></article>) : <p>No accessible purchase records for this account.</p>}</div>
+      <div className="pos-customer-order-list"><h3>Recent purchases</h3>{orders.length ? orders.slice(0, 8).map((order) => <article key={`${order.source}-${order.id}`}><div><strong>{order.receipt_number || `Order #${order.id}`}</strong><span>{salesChannelLabel(salesChannel(order))} · {order.branch || (order.source === "pos" ? "Main Branch" : "Online Store")} · {formatDate(order.created_at)}</span></div><strong>{money(order.total)}</strong></article>) : <p>No accessible purchase records for this account.</p>}</div>
     </section>
   </div>;
 }
 
 function Reports({ data }) {
-  const reports = data.reports || {};
-  const [selected, setSelected] = useState(null);
-  const topCustomer = (data.customers || []).reduce((best, customer) => Number(customer.total_spent || 0) > Number(best && best.total_spent || 0) ? customer : best, null);
-  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>All sales channels</span><h2>Sales Report</h2></div></div><div className="pos-report-cards"><article><span>POS revenue</span><strong>{money(reports.pos_revenue)}</strong><small>{reports.pos_sales || 0} completed in-store sales</small></article><article><span>Online revenue</span><strong>{money(reports.online_revenue)}</strong><small>{reports.online_sales || 0} website orders</small></article><article className="primary"><span>Combined revenue</span><strong>{money(reports.total_revenue)}</strong><small>One shared inventory</small></article>{topCustomer && <button className="pos-report-top-customer" onClick={() => setSelected(topCustomer)} type="button"><span>Top customer</span><strong>{topCustomer.name}</strong><small>{money(topCustomer.total_spent)} · {topCustomer.order_count || 0} orders · View profile</small></button>}</div><div className="pos-movement-list"><h3>Recent stock activity</h3>{(data.inventory_movements || []).map((movement) => <div key={movement.id}><span className={Number(movement.quantity_delta) > 0 ? "in" : "out"}>{Number(movement.quantity_delta) > 0 ? "+" : ""}{movement.quantity_delta}</span><div><strong>{movement.product_name}{movement.size ? ` / ${movement.size}` : ""}</strong><small>{movement.movement_type.replaceAll("_", " ")} · {movement.performed_by_name || movement.performed_by_type}</small></div><time>{formatDate(movement.created_at)}</time></div>)}</div>{selected && <PosCustomerDetail customer={selected} data={data} onClose={() => setSelected(null)} />}</section>;
+  const [period, setPeriod] = useState("month");
+  const [customerFilter, setCustomerFilter] = useState("all");
+  const [branchFilter, setBranchFilter] = useState("all");
+  const [channelFilter, setChannelFilter] = useState("all");
+  const allOrders = (data.report_orders || []).filter((order) => order.status !== "Cancelled");
+  const customerOptions = [...new Map(allOrders.map((order) => [customerReportKey(order), { key: customerReportKey(order), name: order.customer_name || "Walk-in Customer", phone: order.phone || "" }])).values()].sort((a, b) => a.name.localeCompare(b.name));
+  const branches = [...new Set(allOrders.map((order) => order.branch || (order.source === "pos" ? "Main Branch" : "Online Store")))].sort();
+  const nowDate = new Date();
+  const cutoff = new Date(nowDate);
+  if (period === "day") cutoff.setHours(cutoff.getHours() - 24);
+  if (period === "week") cutoff.setDate(cutoff.getDate() - 7);
+  if (period === "month") cutoff.setDate(cutoff.getDate() - 30);
+  if (period === "year") cutoff.setFullYear(cutoff.getFullYear() - 1);
+  const filteredOrders = allOrders.filter((order) => {
+    const orderDate = new Date(order.created_at);
+    const dateMatch = period === "all" || (!Number.isNaN(orderDate.getTime()) && orderDate >= cutoff);
+    const customerMatch = customerFilter === "all" || customerReportKey(order) === customerFilter;
+    const orderBranch = order.branch || (order.source === "pos" ? "Main Branch" : "Online Store");
+    const branchMatch = branchFilter === "all" || orderBranch === branchFilter;
+    const channelMatch = channelFilter === "all" || salesChannel(order) === channelFilter;
+    return dateMatch && customerMatch && branchMatch && channelMatch;
+  });
+
+  const totalItems = filteredOrders.reduce((sum, order) => sum + (order.order_items || []).reduce((itemSum, item) => itemSum + Math.max(0, Number(item.qty || 0)), 0), 0);
+  const totalDiscount = filteredOrders.reduce((sum, order) => sum + Number(order.discount || 0), 0);
+  const totalRevenue = filteredOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const productMap = new Map();
+  const customerMap = new Map();
+  const branchMap = new Map();
+  const channelTotals = { website: { orders: 0, items: 0, total: 0 }, external_online: { orders: 0, items: 0, total: 0 }, store: { orders: 0, items: 0, total: 0 } };
+
+  filteredOrders.forEach((order) => {
+    const orderItems = (order.order_items || []).reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
+    const channel = salesChannel(order);
+    const channelRow = channelTotals[channel] || channelTotals.website;
+    channelRow.orders += 1;
+    channelRow.items += orderItems;
+    channelRow.total += Number(order.total || 0);
+    (order.order_items || []).forEach((item) => {
+      const key = String(item.product_id || item.product_name || "Unknown");
+      const row = productMap.get(key) || { name: item.product_name || "Unknown product", qty: 0, revenue: 0 };
+      row.qty += Math.max(0, Number(item.qty || 0));
+      row.revenue += Math.max(0, Number(item.qty || 0)) * Number(item.price || 0);
+      productMap.set(key, row);
+    });
+    const customerKey = customerReportKey(order);
+    const customer = customerMap.get(customerKey) || { key: customerKey, name: order.customer_name || "Walk-in Customer", phone: order.phone || "", orders: 0, items: 0, discount: 0, total: 0, channels: { website: 0, external_online: 0, store: 0 } };
+    customer.orders += 1;
+    customer.items += orderItems;
+    customer.discount += Number(order.discount || 0);
+    customer.total += Number(order.total || 0);
+    customer.channels[channel] = Number(customer.channels[channel] || 0) + 1;
+    customerMap.set(customerKey, customer);
+    const branchName = order.branch || (order.source === "pos" ? "Main Branch" : "Online Store");
+    const branch = branchMap.get(branchName) || { name: branchName, orders: 0, items: 0, discount: 0, total: 0 };
+    branch.orders += 1;
+    branch.items += orderItems;
+    branch.discount += Number(order.discount || 0);
+    branch.total += Number(order.total || 0);
+    branchMap.set(branchName, branch);
+  });
+
+  const productRows = [...productMap.values()].sort((a, b) => b.qty - a.qty);
+  const customerRows = [...customerMap.values()].map((customer) => {
+    const preferred = Object.entries(customer.channels).sort((a, b) => b[1] - a[1])[0];
+    return { ...customer, preferred_channel: preferred && preferred[1] > 0 ? preferred[0] : "website" };
+  }).sort((a, b) => b.total - a.total);
+  const branchRows = [...branchMap.values()].sort((a, b) => b.total - a.total);
+  const periodLabels = { day: "Last 24 hours", week: "Last 7 days", month: "Last 30 days", year: "Last 12 months", all: "All time" };
+  const selectedCustomer = customerOptions.find((item) => item.key === customerFilter);
+
+  function printReport() {
+    const style = document.createElement("style");
+    style.id = "one-ten-report-page";
+    style.textContent = "@page { size: A4 landscape; margin: 10mm; }";
+    document.head.appendChild(style);
+    document.body.classList.add("printing-report");
+    const finish = () => {
+      document.body.classList.remove("printing-report");
+      document.getElementById("one-ten-report-page")?.remove();
+    };
+    window.addEventListener("afterprint", finish, { once: true });
+    window.print();
+    window.setTimeout(finish, 1500);
+  }
+
+  return <section className="pos-page-panel pos-report-page">
+    <div className="pos-page-heading"><div><span>Printable sales intelligence</span><h2>Sales Report</h2></div><button className="pos-print-report" onClick={printReport} type="button">Print Report</button></div>
+    <div className="pos-report-filters no-print">
+      <label><span>Period</span><select value={period} onChange={(event) => setPeriod(event.target.value)}><option value="day">Last 24 hours</option><option value="week">Last 7 days</option><option value="month">Last 30 days</option><option value="year">Last 12 months</option><option value="all">All time</option></select></label>
+      <label><span>Customer</span><select value={customerFilter} onChange={(event) => setCustomerFilter(event.target.value)}><option value="all">All customers</option>{customerOptions.map((customer) => <option key={customer.key} value={customer.key}>{customer.name}{customer.phone ? ` · ${customer.phone}` : ""}</option>)}</select></label>
+      <label><span>Branch</span><select value={branchFilter} onChange={(event) => setBranchFilter(event.target.value)}><option value="all">All branches</option>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></label>
+      <label><span>Channel</span><select value={channelFilter} onChange={(event) => setChannelFilter(event.target.value)}><option value="all">All channels</option><option value="website">Website</option><option value="external_online">Online outside website</option><option value="store">In-store</option></select></label>
+    </div>
+    <div className="pos-report-print">
+      <header className="pos-print-heading"><div><strong>ONE TEN</strong><span>Sales Report</span></div><p>{periodLabels[period]} · {selectedCustomer ? selectedCustomer.name : "All customers"} · {branchFilter === "all" ? "All branches" : branchFilter} · {channelFilter === "all" ? "All channels" : salesChannelLabel(channelFilter)}</p><small>Generated {formatDate(new Date().toISOString())}</small></header>
+      <div className="pos-report-cards detailed"><article><span>Orders</span><strong>{filteredOrders.length}</strong><small>Completed sales</small></article><article><span>Products sold</span><strong>{totalItems}</strong><small>Total item quantity</small></article><article><span>Total discounts</span><strong>{money(totalDiscount)}</strong><small>Discounts given</small></article><article className="primary"><span>Net revenue</span><strong>{money(totalRevenue)}</strong><small>After discounts</small></article></div>
+      <div className="pos-channel-report">{Object.entries(channelTotals).map(([channel, totals]) => <article key={channel}><span>{salesChannelLabel(channel)}</span><strong>{money(totals.total)}</strong><small>{totals.orders} orders · {totals.items} products</small></article>)}</div>
+      <ReportTable title="Products sold" empty="No products were sold for this filter." headers={["Product", "Quantity", "Gross value"]} rows={productRows.map((row) => [row.name, row.qty, money(row.revenue)])} />
+      <ReportTable title="Customer-by-customer" empty="No customer sales for this filter." headers={["Customer", "Orders", "Products", "Discount", "Net sales", "Preferred channel"]} rows={customerRows.map((row) => [row.name, row.orders, row.items, money(row.discount), money(row.total), salesChannelLabel(row.preferred_channel)])} />
+      <ReportTable title="Branch-by-branch" empty="No branch sales for this filter." headers={["Branch", "Orders", "Products", "Discount", "Net sales"]} rows={branchRows.map((row) => [row.name, row.orders, row.items, money(row.discount), money(row.total)])} />
+    </div>
+  </section>;
+}
+
+function ReportTable({ title, empty, headers, rows }) {
+  return <section className="pos-report-table"><h3>{title}</h3>{rows.length ? <div><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`${title}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div> : <p>{empty}</p>}</section>;
 }
 
 export default function PosPage() {
@@ -498,7 +628,7 @@ export default function PosPage() {
   const nav = [["sale", "New Sale", "pos.sell"], ["history", "Receipts", "pos.history"], ["inventory", "Inventory", "inventory.view"], ["orders", "Online Orders", "orders.view"], ["customers", "Customers", "customers.view"], ["reports", "Reports", "reports.view"]].filter(([, , permission]) => permissions.includes(permission));
 
   return <>
-    <Head><title>ONE TEN POS</title><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content="#101114" /></Head>
+    <Head><title>ONE TEN POS</title><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" /><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content="#101114" /></Head>
     {!token && !loading && <Login onLogin={login} message={message} settings={data.settings || {}} />}
     {token && <main className="pos-app">
       <header className="pos-header">

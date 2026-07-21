@@ -95,6 +95,8 @@ create table if not exists orders (
   address text default '',
   status text default 'Processing',
   source text default 'online',
+  sales_channel text default 'website',
+  branch text default 'Online Store',
   receipt_number text unique,
   payment_method text default '',
   payment_status text default 'Pending',
@@ -162,6 +164,8 @@ alter table orders drop constraint if exists orders_customer_id_fkey;
 alter table orders add constraint orders_customer_id_fkey foreign key (customer_id) references customers(id) on delete set null;
 alter table orders add column if not exists staff_id bigint references staff_users(id) on delete set null;
 alter table orders add column if not exists source text default 'online';
+alter table orders add column if not exists sales_channel text default 'website';
+alter table orders add column if not exists branch text default 'Online Store';
 alter table orders add column if not exists receipt_number text;
 alter table orders add column if not exists payment_method text default '';
 alter table orders add column if not exists payment_status text default 'Pending';
@@ -173,12 +177,17 @@ alter table orders add column if not exists notes text default '';
 alter table orders add column if not exists voided_at text;
 alter table orders add column if not exists voided_by bigint references staff_users(id) on delete set null;
 update orders set source = 'online' where source is null or source = '';
+update orders set sales_channel = case when source = 'pos' then 'store' else 'website' end where sales_channel is null or sales_channel = '';
+update orders set sales_channel = 'store' where source = 'pos' and sales_channel = 'website';
+update orders set branch = case when source = 'pos' then 'Main Branch' else 'Online Store' end where branch is null or branch = '';
+update orders set branch = 'Main Branch' where source = 'pos' and branch = 'Online Store';
 update orders set subtotal = total where coalesce(subtotal, 0) = 0 and total > 0;
 
 create index if not exists idx_products_category on products(category_id);
 create index if not exists idx_products_active_stock on products(active, stock);
 create index if not exists idx_orders_customer on orders(customer_id);
 create index if not exists idx_orders_source_created on orders(source, created_at);
+create index if not exists idx_orders_channel_branch_created on orders(sales_channel, branch, created_at);
 create index if not exists idx_orders_staff on orders(staff_id);
 create index if not exists idx_order_items_order on order_items(order_id);
 create index if not exists idx_staff_users_active on staff_users(active);
@@ -197,6 +206,7 @@ insert into settings (key, value) values
   ('whatsapp_number', '0633454984'),
   ('email', 'support@oneten.shop'),
   ('location', 'Hargaysa'),
+  ('branches', '["Main Branch"]'),
   ('footer_text', 'Men''s fashion, clean prices, Hargaysa delivery.'),
   ('about_title', 'ONE TEN Men''s Fashion'),
   ('about_body', 'ONE TEN focuses on simple, clean menswear for daily outfits. Every product stays between $1 and $10, with fast local delivery and a bold red, white, and black identity.')

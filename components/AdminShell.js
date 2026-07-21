@@ -3,7 +3,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260721-product-customer-view-1";
+const ASSET_VERSION = "20260721-fixed-viewport-reports-1";
 
 if (typeof window !== "undefined") {
   window.React = React;
@@ -16,7 +16,7 @@ export default function AdminShell() {
     <>
       <Head>
         <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
         <meta name="theme-color" content="#f20d14" />
         <meta name="robots" content="noindex,nofollow" />
         <meta name="one-ten-api-base" content={process.env.NEXT_PUBLIC_API_BASE_URL || ""} />

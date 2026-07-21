@@ -348,6 +348,8 @@ async function ensureRuntimeSchema() {
   await query("ALTER TABLE orders ALTER COLUMN customer_id DROP NOT NULL");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS staff_id bigint REFERENCES staff_users(id) ON DELETE SET NULL");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS source text DEFAULT 'online'");
+  await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS sales_channel text DEFAULT 'website'");
+  await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS branch text DEFAULT 'Online Store'");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS receipt_number text");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method text DEFAULT ''");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_status text DEFAULT 'Pending'");
@@ -416,9 +418,14 @@ async function ensureRuntimeSchema() {
   );
   await query("UPDATE products SET active = false WHERE stock <= 0 AND active = true");
   await query("UPDATE orders SET source = 'online' WHERE source IS NULL OR source = ''");
+  await query("UPDATE orders SET sales_channel = CASE WHEN source = 'pos' THEN 'store' ELSE 'website' END WHERE sales_channel IS NULL OR sales_channel = ''");
+  await query("UPDATE orders SET sales_channel = 'store' WHERE source = 'pos' AND sales_channel = 'website'");
+  await query("UPDATE orders SET branch = CASE WHEN source = 'pos' THEN 'Main Branch' ELSE 'Online Store' END WHERE branch IS NULL OR branch = ''");
+  await query("UPDATE orders SET branch = 'Main Branch' WHERE source = 'pos' AND branch = 'Online Store'");
   await query("UPDATE orders SET subtotal = total WHERE COALESCE(subtotal, 0) = 0 AND total > 0");
   await query("CREATE INDEX IF NOT EXISTS idx_staff_users_active ON staff_users(active)");
   await query("CREATE INDEX IF NOT EXISTS idx_orders_source_created ON orders(source, created_at)");
+  await query("CREATE INDEX IF NOT EXISTS idx_orders_channel_branch_created ON orders(sales_channel, branch, created_at)");
   await query("CREATE INDEX IF NOT EXISTS idx_orders_staff ON orders(staff_id)");
   await query("CREATE INDEX IF NOT EXISTS idx_inventory_movements_product ON inventory_movements(product_id, created_at)");
   await query("CREATE INDEX IF NOT EXISTS idx_inventory_movements_reference ON inventory_movements(reference_type, reference_id)");
@@ -476,9 +483,10 @@ async function publicPayload(includeProducts = false) {
     rawSettings[row.key] = row.value;
     if (!SECRET_SETTING_KEYS.has(row.key)) settings[row.key] = row.value;
   });
-  ["information_links", "department_links"].forEach((key) => {
+  ["information_links", "department_links", "branches"].forEach((key) => {
     settings[key] = jsonList(settings[key]);
   });
+  if (!settings.branches.length) settings.branches = ["Main Branch"];
   settings.openai_api_configured = (process.env.OPENAI_API_KEY || rawSettings.openai_api_key || "").trim() ? "1" : "";
   const payload = {
     categories: categories.rows,
@@ -878,7 +886,7 @@ async function handleGet(req, res, pathname) {
     const canSeeCustomers = permissions.includes("customers.view");
     const canSeeReports = permissions.includes("reports.view");
 
-    const [publicData, products, inventoryProducts, posOrders, onlineOrders, customers, orderItems, reportRows, movements] = await Promise.all([
+    const [publicData, products, inventoryProducts, posOrders, onlineOrders, customers, orderItems, reportRows, movements, reportOrders] = await Promise.all([
       publicPayload(false),
       canSeeProducts ? publicProducts() : [],
       permissions.includes("inventory.view")
@@ -898,6 +906,9 @@ async function handleGet(req, res, pathname) {
                    c.created_at,
                    COUNT(o.id) FILTER (WHERE o.status != 'Cancelled')::int AS order_count,
                    COALESCE(SUM(o.total) FILTER (WHERE o.status != 'Cancelled'), 0) AS total_spent,
+                   COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND COALESCE(o.sales_channel, CASE WHEN o.source = 'pos' THEN 'store' ELSE 'website' END) = 'website')::int AS website_orders,
+                   COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND o.sales_channel = 'external_online')::int AS external_online_orders,
+                   COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND COALESCE(o.sales_channel, CASE WHEN o.source = 'pos' THEN 'store' ELSE 'website' END) = 'store')::int AS store_orders,
                    (SELECT o2.phone FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.phone, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS phone,
                    (SELECT o2.address FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.address, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS address,
                    (SELECT o2.id FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_id,
@@ -921,6 +932,12 @@ async function handleGet(req, res, pathname) {
       canSeeReports
         ? query("SELECT * FROM inventory_movements ORDER BY id DESC LIMIT 150")
         : Promise.resolve({ rows: [] }),
+      canSeeReports
+        ? query(`SELECT o.*, s.name AS staff_name, s.username AS staff_username
+                 FROM orders o
+                 LEFT JOIN staff_users s ON s.id = o.staff_id
+                 ORDER BY o.id DESC`)
+        : Promise.resolve({ rows: [] }),
     ]);
     const byOrder = new Map();
     orderItems.rows.forEach((item) => {
@@ -939,6 +956,7 @@ async function handleGet(req, res, pathname) {
       online_orders: onlineOrders.rows.map((order) => ({ ...order, order_items: byOrder.get(String(order.id)) || [] })),
       customers: customers.rows,
       reports: reportRows.rows[0] || {},
+      report_orders: reportOrders.rows.map((order) => ({ ...order, order_items: byOrder.get(String(order.id)) || [] })),
       inventory_movements: movements.rows,
     }, { "Cache-Control": "no-store" });
   }
@@ -958,6 +976,9 @@ async function handleGet(req, res, pathname) {
                  c.created_at,
                  COUNT(o.id) FILTER (WHERE o.status != 'Cancelled')::int AS order_count,
                  COALESCE(SUM(o.total) FILTER (WHERE o.status != 'Cancelled'), 0) AS total_spent,
+                 COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND COALESCE(o.sales_channel, CASE WHEN o.source = 'pos' THEN 'store' ELSE 'website' END) = 'website')::int AS website_orders,
+                 COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND o.sales_channel = 'external_online')::int AS external_online_orders,
+                 COUNT(o.id) FILTER (WHERE o.status != 'Cancelled' AND COALESCE(o.sales_channel, CASE WHEN o.source = 'pos' THEN 'store' ELSE 'website' END) = 'store')::int AS store_orders,
                  (SELECT o2.phone FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.phone, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS phone,
                  (SELECT o2.address FROM orders o2 WHERE o2.customer_id = c.id AND COALESCE(o2.address, '') <> '' ORDER BY o2.id DESC LIMIT 1) AS address,
                  (SELECT o2.id FROM orders o2 WHERE o2.customer_id = c.id ORDER BY o2.id DESC LIMIT 1) AS last_order_id,
@@ -1089,8 +1110,8 @@ async function handlePostPutDelete(req, res, method, pathname) {
         const createdAt = now();
         const order = await client.query(
           `INSERT INTO orders
-           (customer_id, customer_name, phone, address, status, source, payment_status, subtotal, discount, amount_paid, change_due, total, created_at)
-           VALUES ($1, $2, $3, $4, 'Processing', 'online', 'Pending', $5, 0, 0, 0, $5, $6)
+           (customer_id, customer_name, phone, address, status, source, sales_channel, branch, payment_status, subtotal, discount, amount_paid, change_due, total, created_at)
+           VALUES ($1, $2, $3, $4, 'Processing', 'online', 'website', 'Online Store', 'Pending', $5, 0, 0, 0, $5, $6)
            RETURNING id`,
           [customer.id, customer.name, cleanText(data.phone, 80), cleanText(data.address, 400), subtotal, createdAt]
         );
@@ -1127,6 +1148,9 @@ async function handlePostPutDelete(req, res, method, pathname) {
     if (!items.length) return sendJson(req, res, 400, { error: "Add at least one product to the sale" });
     const allowedPayments = ["Cash", "ZAAD", "eDahab", "Card", "Other"];
     const paymentMethod = allowedPayments.includes(data.payment_method) ? data.payment_method : "Cash";
+    const allowedChannels = ["store", "external_online"];
+    const salesChannel = allowedChannels.includes(data.sales_channel) ? data.sales_channel : "store";
+    const branch = cleanText(data.branch || "Main Branch", 120) || "Main Branch";
 
     return withClient(async (client) => {
       await client.query("BEGIN");
@@ -1147,14 +1171,16 @@ async function handlePostPutDelete(req, res, method, pathname) {
         }
         const inserted = await client.query(
           `INSERT INTO orders
-           (customer_id, staff_id, customer_name, phone, address, status, source, payment_method, payment_status, subtotal, discount, amount_paid, change_due, notes, total, created_at)
-           VALUES ($1, $2, $3, $4, '', 'Delivered', 'pos', $5, 'Paid', $6, $7, $8, $9, $10, $11, $12)
+           (customer_id, staff_id, customer_name, phone, address, status, source, sales_channel, branch, payment_method, payment_status, subtotal, discount, amount_paid, change_due, notes, total, created_at)
+           VALUES ($1, $2, $3, $4, '', 'Delivered', 'pos', $5, $6, $7, 'Paid', $8, $9, $10, $11, $12, $13, $14)
            RETURNING id`,
           [
             linkedCustomer && linkedCustomer.id,
             access.staff.id,
             cleanText(linkedCustomer && linkedCustomer.name || data.customer_name || "Walk-in Customer", 120) || "Walk-in Customer",
             cleanText(data.phone, 80),
+            salesChannel,
+            branch,
             paymentMethod,
             subtotal,
             discount,
