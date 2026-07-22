@@ -455,13 +455,18 @@ function Inventory({ data }) {
   return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Shared online + store stock</span><h2>Live Inventory</h2></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory..." /></div><div className="pos-inventory-grid">{products.map((product) => <article key={product.id}><img src={assetUrl(product.image)} alt="" /><div><strong>{product.name}</strong><span>{product.category}</span></div><div className="pos-stock-pills">{(product.product_sizes || []).map((size) => <span key={size.size}>{size.size}<b>{size.stock}</b></span>)}</div><strong className={Number(product.stock) <= 3 ? "low" : ""}>{product.stock} total</strong></article>)}</div></section>;
 }
 
-function OnlineOrders({ data, refresh, notify }) {
+function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder }) {
   const [busyOrder, setBusyOrder] = useState(null);
   const canManage = (data.permissions || []).includes("orders.manage");
+  const orders = data.online_orders || [];
+  const selectedOrder = orders.find((order) => String(order.id) === String(selectedOrderId));
+  const pendingCount = orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status)).length;
+  const packedCount = orders.filter((order) => order.status === "Packed").length;
+  const deliveredCount = orders.filter((order) => order.status === "Delivered").length;
 
   function updateStatus(order, status) {
     setBusyOrder(order.id);
-    staffApi(`/api/staff/orders/${order.id}/status`, { method: "PUT", body: JSON.stringify({ status }) })
+    return staffApi(`/api/staff/orders/${order.id}/status`, { method: "PUT", body: JSON.stringify({ status }) })
       .then(() => {
         notify(`Order #${order.id} updated to ${status}. The customer was notified.`, "success");
         return refresh();
@@ -470,7 +475,41 @@ function OnlineOrders({ data, refresh, notify }) {
       .finally(() => setBusyOrder(null));
   }
 
-  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Website channel</span><h2>Online Orders</h2></div><strong>{(data.online_orders || []).length} recent orders</strong></div><div className="pos-history-list">{(data.online_orders || []).map((order) => <article key={order.id}><div className="pos-history-status"><span className="online">Online</span><small>{order.status}</small></div><div><strong>Order #{order.id}</strong><span>{formatDate(order.created_at)}</span></div><div><strong>{order.customer_name}</strong><span>{order.phone}</span></div><div><strong>{money(order.total)}</strong><span>{order.items || (order.order_items || []).length} lines</span></div>{canManage && <div className="pos-row-actions pos-order-status-action"><select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onChange={(event) => updateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", ...(order.status === "Cancelled" ? ["Cancelled"] : [])].map((status) => <option key={status}>{status}</option>)}</select></div>}</article>)}</div></section>;
+  return <section className="pos-page-panel pos-online-orders-page">
+    <div className="pos-page-heading"><div><span>Website channel</span><h2>Online Orders</h2><p>Open any order to see the customer, products, sizes and live status.</p></div><strong>{orders.length} recent orders</strong></div>
+    <div className="pos-order-overview"><article><span>Needs attention</span><strong>{pendingCount}</strong><small>Active website orders</small></article><article><span>Packed</span><strong>{packedCount}</strong><small>Ready for the next step</small></article><article><span>Delivered</span><strong>{deliveredCount}</strong><small>Completed orders</small></article></div>
+    <div className="pos-online-orders-grid">{orders.map((order) => {
+      const itemQuantity = (order.order_items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
+      return <article className="pos-online-order-card" key={order.id} onClick={() => onSelectOrder(order.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectOrder(order.id); }} role="button" tabIndex="0">
+        <div className="pos-order-card-head"><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><small>{formatDate(order.created_at)}</small></div>
+        <div className="pos-order-card-id"><div><span>Online order</span><strong>#{order.id}</strong></div><b>{money(order.total)}</b></div>
+        <div className="pos-order-card-customer"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><strong>{order.customer_name || "Customer"}</strong><small>{order.phone || "No phone number"}</small></div></div>
+        <div className="pos-order-card-meta"><span><b>{itemQuantity}</b> products</span><span><b>{order.items || (order.order_items || []).length}</b> lines</span><span>{order.branch || "Online Store"}</span></div>
+        <div className="pos-order-card-footer">{canManage ? <select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onClick={(event) => event.stopPropagation()} onChange={(event) => { event.stopPropagation(); updateStatus(order, event.target.value); }} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", ...(order.status === "Cancelled" ? ["Cancelled"] : [])].map((status) => <option key={status}>{status}</option>)}</select> : <span>View only</span>}<b>Open details →</b></div>
+      </article>;
+    })}</div>
+    {!orders.length && <div className="pos-empty"><h3>No online orders yet</h3><p>New website orders will appear here automatically.</p></div>}
+    {selectedOrder && <PosOnlineOrderDetail order={selectedOrder} canManage={canManage} busy={busyOrder === selectedOrder.id} onClose={() => onSelectOrder(null)} onUpdateStatus={updateStatus} />}
+  </section>;
+}
+
+function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateStatus }) {
+  const items = order.order_items || [];
+  const activeQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
+  const cancelledQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.requested_qty || item.qty || 0) - Number(item.qty || 0)), 0);
+
+  return <div className="pos-modal-backdrop pos-order-detail-backdrop" onClick={onClose} role="dialog" aria-modal="true" aria-label={`Order ${order.id} details`}>
+    <section className="pos-online-order-detail" onClick={(event) => event.stopPropagation()}>
+      <header className="pos-order-detail-head"><div><span>Website order</span><h2>Order #{order.id}</h2><small>{formatDate(order.created_at)}</small></div><button onClick={onClose} type="button" aria-label="Close order details">×</button></header>
+      <div className="pos-order-detail-scroll">
+        <div className="pos-order-detail-status"><div><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><strong>{money(order.total)}</strong></div>{canManage && order.status !== "Cancelled" ? <label><span>Update status</span><select disabled={busy} onChange={(event) => onUpdateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered"].map((status) => <option key={status}>{status}</option>)}</select></label> : <small>{canManage ? "Cancelled order" : "View-only access"}</small>}</div>
+        <div className="pos-order-detail-metrics"><article><span>Products</span><strong>{activeQuantity}</strong></article><article><span>Product lines</span><strong>{items.length}</strong></article><article><span>Cancelled qty</span><strong>{cancelledQuantity}</strong></article><article><span>Channel</span><strong>Website</strong></article></div>
+        <section className="pos-order-customer-card"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer</small><h3>{order.customer_name || "Customer"}</h3><a href={order.phone ? `tel:${String(order.phone).replace(/[^\d+]/g, "")}` : undefined}>{order.phone || "No phone number"}</a><p>{order.address || "No delivery address provided"}</p></div></section>
+        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products, sizes and quantities</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-list">{items.map((item) => <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>
+        <div className="pos-order-detail-total"><div><span>Branch</span><strong>{order.branch || "Online Store"}</strong></div><div><span>Payment</span><strong>{order.payment_status || "Pending"}</strong></div><div className="grand"><span>Order total</span><strong>{money(order.total)}</strong></div></div>
+      </div>
+    </section>
+  </div>;
 }
 
 function Customers({ data }) {
@@ -608,7 +647,7 @@ function ReportTable({ title, empty, headers, rows }) {
   return <section className="pos-report-table"><h3>{title}</h3>{rows.length ? <div><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`${title}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div> : <p>{empty}</p>}</section>;
 }
 
-function PosNotificationCenter({ data, refresh, onOpenOrders }) {
+function PosNotificationCenter({ data, refresh, onOpenOrder }) {
   const [open, setOpen] = useState(false);
   const [live, setLive] = useState({ notifications: data.notifications || [], unread: Number(data.notification_unread || 0) });
   const [incoming, setIncoming] = useState(null);
@@ -691,7 +730,7 @@ function PosNotificationCenter({ data, refresh, onOpenOrders }) {
     setOpen(false);
     setIncoming(null);
     window.clearInterval(ringTimer.current);
-    markRead(notification.id).then(() => refresh()).finally(onOpenOrders);
+    markRead(notification.id).then(() => refresh()).finally(() => onOpenOrder(notification.order_id));
   }
 
   function dismissIncoming() {
@@ -741,6 +780,7 @@ export default function PosPage() {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("error");
+  const [selectedOnlineOrderId, setSelectedOnlineOrderId] = useState(null);
 
   useEffect(() => {
     const stored = localStorage.getItem("staffToken") || "";
@@ -797,6 +837,7 @@ export default function PosPage() {
     staffApi("/api/staff/logout", { method: "POST", body: "{}" }).catch(() => {}).finally(() => {
       localStorage.removeItem("staffToken");
       setToken("");
+      setSelectedOnlineOrderId(null);
       setData((current) => ({ ...emptyData, settings: current.settings }));
     });
   }
@@ -809,9 +850,9 @@ export default function PosPage() {
     {!token && !loading && <Login onLogin={login} message={message} settings={data.settings || {}} />}
     {token && <main className="pos-app">
       <header className="pos-header">
-        <Link href="/" className="pos-logo"><img src={assetUrl(data.settings.logo_night || data.settings.logo_image || "/assets/logo-white.png")} alt="ONE TEN" /><span>POS</span></Link>
+        <Link href="/" className="pos-logo"><img src={assetUrl(data.settings.logo_day || data.settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" /><span>POS</span></Link>
         <nav>{nav.map(([id, label]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>)}</nav>
-        {permissions.includes("orders.view") && <PosNotificationCenter data={data} refresh={() => load(true)} onOpenOrders={() => setTab("orders")} />}
+        {permissions.includes("orders.view") && <PosNotificationCenter data={data} refresh={() => load(true)} onOpenOrder={(orderId) => { setSelectedOnlineOrderId(orderId); setTab("orders"); }} />}
         <div className="pos-staff-menu"><span>{data.staff && data.staff.name}<small>{data.staff && data.staff.role}</small></span><button onClick={() => load()} type="button">↻</button><button onClick={logout} type="button">Sign out</button></div>
       </header>
       {message && <div className={`pos-global-alert ${messageType}`}>{message}</div>}
@@ -819,7 +860,7 @@ export default function PosPage() {
         {tab === "sale" && permissions.includes("pos.sell") && <SaleWorkspace data={data} refresh={() => load(true)} notify={notify} />}
         {tab === "history" && permissions.includes("pos.history") && <History data={data} refresh={() => load(true)} notify={notify} />}
         {tab === "inventory" && permissions.includes("inventory.view") && <Inventory data={data} />}
-        {tab === "orders" && permissions.includes("orders.view") && <OnlineOrders data={data} refresh={() => load(true)} notify={notify} />}
+        {tab === "orders" && permissions.includes("orders.view") && <OnlineOrders data={data} refresh={() => load(true)} notify={notify} selectedOrderId={selectedOnlineOrderId} onSelectOrder={setSelectedOnlineOrderId} />}
         {tab === "customers" && permissions.includes("customers.view") && <Customers data={data} />}
         {tab === "reports" && permissions.includes("reports.view") && <Reports data={data} />}
         {!nav.length && <div className="pos-empty denied"><h2>No access assigned</h2><p>Ask the administrator to enable at least one POS section.</p></div>}
