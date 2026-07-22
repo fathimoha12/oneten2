@@ -543,7 +543,7 @@ function TopBar({ customer, logout }) {
 
 function Header({ theme, setTheme, query, setQuery, cartCount, customer, navigate, settings }) {
   const headerLogo = theme === "night"
-    ? (settings.logo_night || settings.logo_image || assets.logoWhite)
+    ? (settings.logo_day || settings.logo_image || assets.logoRed)
     : (settings.logo_day || settings.logo_image || assets.logoRed);
 
   function toggleTheme() {
@@ -1143,7 +1143,7 @@ function Footer({ settings }) {
   const infoLinks = Array.isArray(settings.information_links) ? settings.information_links : [{ label: "About Us", href: "/about" }, { label: "Contact Us", href: "/contact" }, { label: "Shop Grid", href: "/shop" }];
   const departmentLinks = Array.isArray(settings.department_links) ? settings.department_links : [{ label: "Shirts", href: "/shop" }, { label: "Accessories", href: "/shop" }, { label: "Admin Login", href: "/admin" }];
   return React.createElement("footer", { className: "footer" },
-    React.createElement("div", { className: "footer-brand" }, React.createElement("img", { src: settings.footer_logo || settings.logo_night || settings.logo_image || assets.logoWhite, alt: "ONE TEN" }), React.createElement("p", null, settings.footer_text || "Men's fashion, clean prices, Hargaysa delivery.")),
+    React.createElement("div", { className: "footer-brand" }, React.createElement("img", { src: settings.footer_logo || settings.logo_day || settings.logo_image || assets.logoRed, alt: "ONE TEN" }), React.createElement("p", null, settings.footer_text || "Men's fashion, clean prices, Hargaysa delivery.")),
     React.createElement("div", null, React.createElement("h3", null, settings.contact_title || "Get In Touch"), React.createElement("p", null, `Phone: ${settings.phone || "+252 63 000 1010"}`), React.createElement("p", null, settings.email || "support@oneten.shop")),
     React.createElement("div", null, React.createElement("h3", null, "Information"), infoLinks.map((link, index) => React.createElement("a", { href: link.href, key: index }, link.label))),
     React.createElement("div", null, React.createElement("h3", null, "Shop Departments"), departmentLinks.map((link, index) => React.createElement("a", { href: link.href, key: index }, link.label)))

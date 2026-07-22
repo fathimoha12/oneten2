@@ -9172,37 +9172,59 @@ textarea {
 }
 
 .admin-theme-night .admin-login-card .admin-login-theme-toggle {
-  background: #26332e;
-  border-color: #3a4a44;
-  color: #f1f6f4;
+  background: #252c34;
+  border-color: #3b4550;
+  color: #f3f5f7;
 }
 
 .store.night {
-  --paper: #0f1513;
-  --panel: #18201d;
-  --ink: #edf4f1;
-  --muted: #aab8b3;
-  --line: rgba(226, 239, 234, .13);
-  --soft: #202a26;
-  --shadow: 0 16px 42px rgba(0, 0, 0, .3);
-  background: #0f1513;
+  --paper: #0d0f12;
+  --panel: #161a1f;
+  --ink: #f3f5f7;
+  --muted: #a7afb9;
+  --line: rgba(229, 234, 240, .13);
+  --soft: #1e242b;
+  --shadow: 0 16px 42px rgba(0, 0, 0, .34);
+  background: #0d0f12;
   color-scheme: dark;
 }
 
-.store.night :is(.header, .category-nav, .home-copy, .summary, .form-card, .content-page, .cart-item, .history-item, .history-tabs, .search input, .search select, .theme-btn, .hotline) {
-  background: #18201d;
-  border-color: rgba(226, 239, 234, .13);
-  color: #edf4f1;
+.store.night :is(.header, .home-copy, .summary, .form-card, .content-page, .cart-item, .history-item, .history-tabs, .search input, .search select, .theme-btn, .hotline) {
+  background: #161a1f;
+  border-color: rgba(229, 234, 240, .13);
+  color: #f3f5f7;
+}
+
+.store.night .category-nav {
+  background: linear-gradient(90deg, #c90910, #f20d14);
+  border-color: #f20d14;
+}
+
+.store.night .category-nav a {
+  color: rgba(255, 255, 255, .9);
+}
+
+.store.night .category-nav a.active {
+  background: rgba(17, 18, 21, .22);
+  color: #fff;
+}
+
+.store.night .brand img,
+.admin-theme-night .admin-login-card > img,
+.admin-theme-night .admin-sidebar > img,
+.pos-theme-night .pos-login-brand img,
+.pos-theme-night .pos-login-panel form > img {
+  filter: drop-shadow(0 8px 18px rgba(242, 13, 20, .16));
 }
 
 .pos-theme-night,
 .admin-theme-night {
-  --night-bg: #0f1513;
-  --night-panel: #18201d;
-  --night-panel-soft: #202a26;
-  --night-line: #31403a;
-  --night-text: #edf4f1;
-  --night-muted: #aab8b3;
+  --night-bg: #0d0f12;
+  --night-panel: #161a1f;
+  --night-panel-soft: #1e242b;
+  --night-line: #303842;
+  --night-text: #f3f5f7;
+  --night-muted: #a7afb9;
   background: var(--night-bg) !important;
   color: var(--night-text);
   color-scheme: dark;
@@ -9210,9 +9232,9 @@ textarea {
 
 .pos-theme-night .backoffice-theme-toggle,
 .admin-theme-night .backoffice-theme-toggle {
-  background: #26332e;
-  border-color: #3a4a44;
-  color: #f1f6f4;
+  background: #252c34;
+  border-color: #3b4550;
+  color: #f3f5f7;
 }
 
 .pos-theme-night :is(.pos-header, .pos-page-heading, .pos-cart-panel, .pos-product-card, .pos-history-list > article, .pos-inventory-grid article, .pos-customer-grid > button, .pos-report-cards article, .pos-report-filters, .pos-report-table, .pos-online-order-card, .pos-order-overview article, .pos-online-order-detail, .pos-order-detail-status, .pos-order-detail-metrics article, .pos-order-customer-card, .pos-order-product-section, .pos-order-detail-total, .pos-customer-detail, .pos-product-view, .notification-panel) {
@@ -9233,8 +9255,8 @@ textarea {
 }
 
 .pos-theme-night :is(input, select, textarea, .pos-order-size-overview button) {
-  background: #111815 !important;
-  border-color: #3a4943 !important;
+  background: #101419 !important;
+  border-color: #39434e !important;
   color: var(--night-text) !important;
 }
 
@@ -9273,8 +9295,8 @@ textarea {
 }
 
 .admin-theme-night :is(input, select, textarea, .admin-top-search input, .drawer-order-item input, .drawer-order-item select) {
-  background: #111815 !important;
-  border-color: #3a4943 !important;
+  background: #101419 !important;
+  border-color: #39434e !important;
   color: var(--night-text) !important;
 }
 

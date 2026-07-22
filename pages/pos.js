@@ -138,7 +138,7 @@ function Login({ onLogin, message, settings, theme, onToggleTheme }) {
       <button className="backoffice-theme-toggle pos-login-theme-toggle" onClick={onToggleTheme} type="button">{theme === "night" ? "☀ Light" : "☾ Dark"}</button>
       <section className="pos-login-brand">
         <Link href="/" aria-label="ONE TEN home">
-          <img src={assetUrl(settings.logo_night || settings.logo_image || "/assets/logo-white.png")} alt="ONE TEN" />
+          <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
         </Link>
         <span>Store operations</span>
         <h1>One stock.<br />Every sale.</h1>
@@ -151,7 +151,7 @@ function Login({ onLogin, message, settings, theme, onToggleTheme }) {
       </section>
       <section className="pos-login-panel">
         <form onSubmit={submit}>
-          <img src={assetUrl(theme === "night" ? settings.logo_night || settings.logo_image || "/assets/logo-white.png" : settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
+          <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
           <p className="pos-kicker">Receptionist / Seller</p>
           <h2>Sign in to POS</h2>
           <p>Use the account created for you by the administrator.</p>

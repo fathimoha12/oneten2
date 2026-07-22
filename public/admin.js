@@ -290,7 +290,7 @@ function AdminApp() {
     return React.createElement("div", { className: `admin-login-page admin-theme-${theme}` },
       React.createElement("form", { className: "admin-login-card", onSubmit: login },
         React.createElement("button", { className: "backoffice-theme-toggle admin-login-theme-toggle", onClick: toggleTheme, type: "button" }, theme === "night" ? "☀ Light" : "☾ Dark"),
-        React.createElement("img", { src: theme === "night" ? data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png" : data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
+        React.createElement("img", { src: data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
         React.createElement("h1", null, "Admin Login"),
         React.createElement("p", null, "Enter your private admin credentials."),
         message && React.createElement("div", { className: "admin-message" }, message),
@@ -304,7 +304,7 @@ function AdminApp() {
 
   return React.createElement("div", { className: `admin-shell admin-theme-${theme}` },
     React.createElement("aside", { className: "admin-sidebar" },
-      React.createElement("img", { src: data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png", alt: "ONE TEN" }),
+      React.createElement("img", { src: data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
       [["dashboard", "Dashboard"], ["products", "Products"], ["catalog", "Catalog Tools"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["staff", "Staff & POS Access"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
         React.createElement("button", { className: tab === id ? "active" : "", key: id, onClick: () => setTab(id), type: "button" }, label)
       ),

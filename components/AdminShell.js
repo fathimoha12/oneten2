@@ -3,7 +3,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260722-theme-and-order-size-view-1";
+const ASSET_VERSION = "20260722-dark-balance-2";
 
 if (typeof window !== "undefined") {
   window.React = React;
