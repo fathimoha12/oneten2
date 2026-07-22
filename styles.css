@@ -8676,3 +8676,177 @@ textarea {
     padding: 11px;
   }
 }
+
+/* Shared order and product status separation for Admin and POS. */
+.order-status-filter {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 3px 1px 10px;
+  scrollbar-width: thin;
+}
+
+.order-status-filter > button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #dbe7e3;
+  border-radius: 999px;
+  color: #65716d;
+  cursor: pointer;
+  display: inline-flex;
+  flex: 0 0 auto;
+  font-size: 10px;
+  font-weight: 850;
+  gap: 8px;
+  min-height: 39px;
+  padding: 0 11px 0 14px;
+}
+
+.order-status-filter > button > strong {
+  align-items: center;
+  background: #eef3f1;
+  border-radius: 999px;
+  color: #43504b;
+  display: flex;
+  font-size: 9px;
+  height: 23px;
+  justify-content: center;
+  min-width: 23px;
+  padding: 0 5px;
+}
+
+.order-status-filter > button:hover {
+  border-color: #a9bdb6;
+  color: #17201d;
+}
+
+.order-status-filter > button.active {
+  background: #111815;
+  border-color: #111815;
+  box-shadow: 0 9px 22px rgba(17, 24, 21, .13);
+  color: #fff;
+}
+
+.order-status-filter > button.active > strong {
+  background: #f20d14;
+  color: #fff;
+}
+
+.pos-order-status-filter {
+  margin: 2px 0 13px;
+}
+
+.admin-order-status-filter {
+  margin: 2px 0 5px;
+}
+
+.admin-order-product-groups,
+.pos-order-product-groups {
+  display: grid;
+  gap: 14px;
+}
+
+.admin-order-product-group {
+  background: #f7faf9;
+  border: 1px solid #dfe9e6;
+  border-radius: 15px;
+  overflow: hidden;
+}
+
+.admin-order-product-group > header,
+.pos-order-product-group > header {
+  align-items: center;
+  background: #f3f7f6;
+  border-bottom: 1px solid #dfe9e6;
+  display: flex;
+  justify-content: space-between;
+  padding: 11px 13px;
+}
+
+.admin-order-product-group > header > div,
+.pos-order-product-group > header > div {
+  align-items: center;
+  display: flex;
+  gap: 9px;
+}
+
+.admin-order-product-group > header > div > strong,
+.pos-order-product-group > header > div > strong {
+  color: #32403b;
+  font-size: 10px;
+}
+
+.admin-order-product-group > header > small,
+.pos-order-product-group > header > small {
+  color: #84908b;
+  font-size: 9px;
+  font-weight: 800;
+}
+
+.admin-order-product-group.status-processing,
+.pos-order-product-group.status-processing {
+  border-left: 4px solid #d9a522;
+}
+
+.admin-order-product-group.status-approved,
+.pos-order-product-group.status-approved {
+  border-left: 4px solid #367ad4;
+}
+
+.admin-order-product-group.status-cancelled,
+.pos-order-product-group.status-cancelled {
+  border-left: 4px solid #dc2027;
+}
+
+.admin-order-product-group .drawer-order-items {
+  gap: 0;
+}
+
+.admin-order-product-group .drawer-order-item {
+  border: 0;
+  border-bottom: 1px solid #e5ecea;
+  border-radius: 0;
+}
+
+.admin-order-product-group .drawer-order-item:last-child {
+  border-bottom: 0;
+}
+
+.admin-order-products-empty {
+  color: #858f8c;
+  font-size: 11px;
+  padding: 15px;
+  text-align: center;
+}
+
+.pos-order-product-group {
+  border-bottom: 1px solid #e2eae8;
+}
+
+.pos-order-product-group:last-child {
+  border-bottom: 0;
+}
+
+.pos-order-product-group > header {
+  padding: 12px 16px;
+}
+
+@media (max-width: 640px) {
+  .order-status-filter {
+    margin-left: -2px;
+    margin-right: -2px;
+    padding-bottom: 12px;
+  }
+
+  .order-status-filter > button {
+    min-height: 42px;
+  }
+
+  .admin-order-product-group > header,
+  .pos-order-product-group > header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+}

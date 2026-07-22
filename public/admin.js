@@ -1334,7 +1334,11 @@ function CustomerDetailDrawer({ customer, orders, onClose }) {
 
 function OrdersAdmin({ data, refresh, setMessage, onOpenCustomer }) {
   const [selectedOrderId, setSelectedOrderId] = useState(null);
-  const selectedOrder = selectedOrderId ? (data.orders || []).find((order) => String(order.id) === String(selectedOrderId)) : null;
+  const [statusFilter, setStatusFilter] = useState("All");
+  const orders = data.orders || [];
+  const statusOptions = ["All", "Processing", "Approved", "Packed", "Delivered", "Cancelled"];
+  const filteredOrders = statusFilter === "All" ? orders : orders.filter((order) => order.status === statusFilter);
+  const selectedOrder = selectedOrderId ? orders.find((order) => String(order.id) === String(selectedOrderId)) : null;
   const selectedCustomer = selectedOrder ? (data.customers || []).find((customer) => String(customer.id) === String(selectedOrder.customer_id)) : null;
 
   function update(order, status) {
@@ -1356,14 +1360,15 @@ function OrdersAdmin({ data, refresh, setMessage, onOpenCustomer }) {
   }
 
   return React.createElement("section", { className: "admin-table orders orders-board" },
-    React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Online + in-store"), React.createElement("h2", null, "All Sales & Orders")), React.createElement("strong", null, `${(data.orders || []).length} records`)),
-    (data.orders || []).length ? data.orders.map((order) => React.createElement("article", { className: "order-row order-row-clickable", key: order.id, onClick: () => setSelectedOrderId(order.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedOrderId(order.id); }, role: "button", tabIndex: 0 },
+    React.createElement("div", { className: "orders-board-head" }, React.createElement("div", null, React.createElement("span", null, "Online + in-store"), React.createElement("h2", null, "Sales & Orders by Status")), React.createElement("strong", null, `${orders.length} records`)),
+    React.createElement("div", { className: "order-status-filter admin-order-status-filter" }, statusOptions.map((status) => React.createElement("button", { className: statusFilter === status ? "active" : "", key: status, onClick: () => setStatusFilter(status), type: "button" }, React.createElement("span", null, status), React.createElement("strong", null, status === "All" ? orders.length : orders.filter((order) => order.status === status).length)))),
+    filteredOrders.length ? filteredOrders.map((order) => React.createElement("article", { className: "order-row order-row-clickable", key: order.id, onClick: () => setSelectedOrderId(order.id), onKeyDown: (event) => { if (event.key === "Enter" || event.key === " ") setSelectedOrderId(order.id); }, role: "button", tabIndex: 0 },
       React.createElement("div", { className: "order-row-id" }, React.createElement("strong", null, order.receipt_number || `#${order.id}`), React.createElement("span", { className: `order-status status-${String(order.status || "processing").toLowerCase().replace(/\s+/g, "-")}` }, order.status || "Processing"), React.createElement("small", null, order.sales_channel === "external_online" ? "Online outside website" : order.source === "pos" ? "In-store POS" : "Website")),
       React.createElement("div", { className: "order-row-customer" }, React.createElement("strong", null, order.customer_name), React.createElement("span", null, order.phone || "No phone"), React.createElement("small", null, order.address || "No address")),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Product lines"), React.createElement("strong", null, Number(order.items || (order.order_items || []).length))),
       React.createElement("div", { className: "order-row-stat" }, React.createElement("span", null, "Total"), React.createElement("strong", null, `$${Number(order.total || 0).toFixed(2)}`)),
       React.createElement("span", { className: "row-open-label" }, "Open order")
-    )) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, "No orders yet")),
+    )) : React.createElement("div", { className: "empty-state compact" }, React.createElement("h2", null, orders.length ? `No ${statusFilter.toLowerCase()} orders` : "No orders yet")),
     selectedOrder && React.createElement(AdminOrderDrawer, { customer: selectedCustomer, onClose: () => setSelectedOrderId(null), onOpenCustomer, onUpdateItem: updateItem, onUpdateOrder: update, order: selectedOrder })
   );
 }
@@ -1401,11 +1406,30 @@ function AdminOrderDrawer({ order, customer, onClose, onOpenCustomer, onUpdateIt
               React.createElement("div", null, React.createElement("strong", null, "Cancel everything"), React.createElement("span", null, "Cancels every remaining product and restores all stock.")),
               React.createElement("button", { onClick: cancelEntireOrder, type: "button" }, "Cancel Entire Order")
             ),
-        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products, sizes and quantities"), React.createElement("p", null, order.source === "pos" ? "Completed POS lines are read-only. Void the receipt to restore all stock." : "For a partial cancellation, enter how many units to cancel on each product. Use Cancel Product to cancel a complete line."),
-          React.createElement("div", { className: "drawer-order-items" }, (order.order_items || []).map((item) => order.source === "pos" ? React.createElement("article", { className: "drawer-order-item", key: item.id }, React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }), React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Sold quantity ${Number(item.qty || item.requested_qty || 0)}`))) : React.createElement(AdminOrderItemEditor, { item, key: item.id, onSave: onUpdateItem })))
+        React.createElement("section", { className: "drawer-section" }, React.createElement("h3", null, "Products separated by status"), React.createElement("p", null, order.source === "pos" ? "Completed POS lines are read-only. Void the receipt to restore all stock." : "Processing, approved and cancelled products are shown in separate groups below."),
+          React.createElement(AdminOrderItemsByStatus, { order, onUpdateItem })
         )
       )
     )
+  );
+}
+
+function AdminOrderItemsByStatus({ order, onUpdateItem }) {
+  const items = order.order_items || [];
+  const groups = ["Processing", "Approved", "Cancelled"]
+    .map((status) => ({ status, items: items.filter((item) => (item.status || "Processing") === status) }))
+    .filter((group) => group.items.length);
+
+  return React.createElement("div", { className: "admin-order-product-groups" },
+    groups.length ? groups.map((group) => React.createElement("section", { className: `admin-order-product-group status-${group.status.toLowerCase()}`, key: group.status },
+      React.createElement("header", null,
+        React.createElement("div", null, React.createElement("span", { className: `order-status status-${group.status.toLowerCase()}` }, group.status), React.createElement("strong", null, `${group.items.length} product line${group.items.length === 1 ? "" : "s"}`)),
+        React.createElement("small", null, `${group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity`)
+      ),
+      React.createElement("div", { className: "drawer-order-items" }, group.items.map((item) => order.source === "pos"
+        ? React.createElement("article", { className: `drawer-order-item ${item.status === "Cancelled" ? "is-cancelled" : ""}`, key: item.id }, React.createElement(ProductVisual, { src: item.product_image || "assets/ai-products.png", alt: item.product_name, className: "drawer-order-product-visual" }), React.createElement("div", { className: "drawer-order-item-main" }, React.createElement("strong", null, item.product_name), React.createElement("span", null, `${item.size ? `Size ${item.size}` : "No size"} / $${Number(item.price || 0).toFixed(2)} each`), React.createElement("small", null, `Sold quantity ${Number(item.qty || item.requested_qty || 0)}`)))
+        : React.createElement(AdminOrderItemEditor, { item, key: item.id, onSave: onUpdateItem })))
+    )) : React.createElement("p", { className: "admin-order-products-empty" }, "No product lines in this order.")
   );
 }
 

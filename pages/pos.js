@@ -457,8 +457,11 @@ function Inventory({ data }) {
 
 function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder }) {
   const [busyOrder, setBusyOrder] = useState(null);
+  const [statusFilter, setStatusFilter] = useState("All");
   const canManage = (data.permissions || []).includes("orders.manage");
   const orders = data.online_orders || [];
+  const statusOptions = ["All", "Processing", "Approved", "Packed", "Delivered", "Cancelled"];
+  const filteredOrders = statusFilter === "All" ? orders : orders.filter((order) => order.status === statusFilter);
   const selectedOrder = orders.find((order) => String(order.id) === String(selectedOrderId));
   const pendingCount = orders.filter((order) => !["Delivered", "Cancelled"].includes(order.status)).length;
   const packedCount = orders.filter((order) => order.status === "Packed").length;
@@ -478,7 +481,8 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
   return <section className="pos-page-panel pos-online-orders-page">
     <div className="pos-page-heading"><div><span>Website channel</span><h2>Online Orders</h2><p>Open any order to see the customer, products, sizes and live status.</p></div><strong>{orders.length} recent orders</strong></div>
     <div className="pos-order-overview"><article><span>Needs attention</span><strong>{pendingCount}</strong><small>Active website orders</small></article><article><span>Packed</span><strong>{packedCount}</strong><small>Ready for the next step</small></article><article><span>Delivered</span><strong>{deliveredCount}</strong><small>Completed orders</small></article></div>
-    <div className="pos-online-orders-grid">{orders.map((order) => {
+    <div className="order-status-filter pos-order-status-filter">{statusOptions.map((status) => <button className={statusFilter === status ? "active" : ""} key={status} onClick={() => setStatusFilter(status)} type="button"><span>{status}</span><strong>{status === "All" ? orders.length : orders.filter((order) => order.status === status).length}</strong></button>)}</div>
+    <div className="pos-online-orders-grid">{filteredOrders.map((order) => {
       const itemQuantity = (order.order_items || []).reduce((sum, item) => sum + Number(item.qty || 0), 0);
       return <article className="pos-online-order-card" key={order.id} onClick={() => onSelectOrder(order.id)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") onSelectOrder(order.id); }} role="button" tabIndex="0">
         <div className="pos-order-card-head"><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><small>{formatDate(order.created_at)}</small></div>
@@ -488,13 +492,14 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
         <div className="pos-order-card-footer">{canManage ? <select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onClick={(event) => event.stopPropagation()} onChange={(event) => { event.stopPropagation(); updateStatus(order, event.target.value); }} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", ...(order.status === "Cancelled" ? ["Cancelled"] : [])].map((status) => <option key={status}>{status}</option>)}</select> : <span>View only</span>}<b>Open details →</b></div>
       </article>;
     })}</div>
-    {!orders.length && <div className="pos-empty"><h3>No online orders yet</h3><p>New website orders will appear here automatically.</p></div>}
+    {!filteredOrders.length && <div className="pos-empty"><h3>{orders.length ? `No ${statusFilter.toLowerCase()} orders` : "No online orders yet"}</h3><p>{orders.length ? "Choose another status to see its orders." : "New website orders will appear here automatically."}</p></div>}
     {selectedOrder && <PosOnlineOrderDetail order={selectedOrder} canManage={canManage} busy={busyOrder === selectedOrder.id} onClose={() => onSelectOrder(null)} onUpdateStatus={updateStatus} />}
   </section>;
 }
 
 function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateStatus }) {
   const items = order.order_items || [];
+  const itemGroups = ["Processing", "Approved", "Cancelled"].map((status) => ({ status, items: items.filter((item) => (item.status || "Processing") === status) })).filter((group) => group.items.length);
   const activeQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
   const cancelledQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.requested_qty || item.qty || 0) - Number(item.qty || 0)), 0);
 
@@ -505,7 +510,7 @@ function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateStatus 
         <div className="pos-order-detail-status"><div><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><strong>{money(order.total)}</strong></div>{canManage && order.status !== "Cancelled" ? <label><span>Update status</span><select disabled={busy} onChange={(event) => onUpdateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered"].map((status) => <option key={status}>{status}</option>)}</select></label> : <small>{canManage ? "Cancelled order" : "View-only access"}</small>}</div>
         <div className="pos-order-detail-metrics"><article><span>Products</span><strong>{activeQuantity}</strong></article><article><span>Product lines</span><strong>{items.length}</strong></article><article><span>Cancelled qty</span><strong>{cancelledQuantity}</strong></article><article><span>Channel</span><strong>Website</strong></article></div>
         <section className="pos-order-customer-card"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer</small><h3>{order.customer_name || "Customer"}</h3><a href={order.phone ? `tel:${String(order.phone).replace(/[^\d+]/g, "")}` : undefined}>{order.phone || "No phone number"}</a><p>{order.address || "No delivery address provided"}</p></div></section>
-        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products, sizes and quantities</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-list">{items.map((item) => <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>
+        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products separated by status</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-groups">{itemGroups.map((group) => <section className={`pos-order-product-group status-${group.status.toLowerCase()}`} key={group.status}><header><div><span className={`pos-order-status status-${group.status.toLowerCase()}`}>{group.status}</span><strong>{group.items.length} product line{group.items.length === 1 ? "" : "s"}</strong></div><small>{group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity</small></header><div className="pos-order-product-list">{group.items.map((item) => <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>)}</div></section>
         <div className="pos-order-detail-total"><div><span>Branch</span><strong>{order.branch || "Online Store"}</strong></div><div><span>Payment</span><strong>{order.payment_status || "Pending"}</strong></div><div className="grand"><span>Order total</span><strong>{money(order.total)}</strong></div></div>
       </div>
     </section>
