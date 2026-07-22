@@ -289,7 +289,7 @@ function AdminApp() {
   if (!token) {
     return React.createElement("div", { className: `admin-login-page admin-theme-${theme}` },
       React.createElement("form", { className: "admin-login-card", onSubmit: login },
-        React.createElement("button", { className: "backoffice-theme-toggle admin-login-theme-toggle", onClick: toggleTheme, type: "button" }, theme === "night" ? "☀ Light" : "☾ Dark"),
+        React.createElement("button", { "aria-label": theme === "night" ? "Switch to light mode" : "Switch to dark mode", className: "backoffice-theme-toggle admin-login-theme-toggle", onClick: toggleTheme, title: theme === "night" ? "Light mode" : "Dark mode", type: "button" }, theme === "night" ? "\u2600" : "\u263e"),
         React.createElement("img", { src: data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
         React.createElement("h1", null, "Admin Login"),
         React.createElement("p", null, "Enter your private admin credentials."),
@@ -317,7 +317,7 @@ function AdminApp() {
         React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "ONE TEN SQL Admin"), React.createElement("h1", null, tab === "dashboard" ? "Good Morning" : tab.replace("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()))),
         React.createElement("div", { className: "admin-top-search" }, React.createElement("input", { placeholder: "Search anything" })),
         React.createElement(AdminNotificationCenter, { data, onOpenOrders: () => setTab("orders"), refresh }),
-        React.createElement("button", { className: "backoffice-theme-toggle", onClick: toggleTheme, type: "button" }, theme === "night" ? "☀ Light" : "☾ Dark"),
+        React.createElement("button", { "aria-label": theme === "night" ? "Switch to light mode" : "Switch to dark mode", className: "backoffice-theme-toggle", onClick: toggleTheme, title: theme === "night" ? "Light mode" : "Dark mode", type: "button" }, theme === "night" ? "\u2600" : "\u263e"),
         React.createElement("button", { onClick: refresh, type: "button" }, "Refresh")
       ),
       React.createElement("div", { className: "admin-stats" },

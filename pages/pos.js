@@ -135,7 +135,13 @@ function Login({ onLogin, message, settings, theme, onToggleTheme }) {
 
   return (
     <main className={`pos-login-page pos-theme-${theme}`}>
-      <button className="backoffice-theme-toggle pos-login-theme-toggle" onClick={onToggleTheme} type="button">{theme === "night" ? "☀ Light" : "☾ Dark"}</button>
+      <button
+        aria-label={theme === "night" ? "Switch to light mode" : "Switch to dark mode"}
+        className="backoffice-theme-toggle pos-login-theme-toggle"
+        onClick={onToggleTheme}
+        title={theme === "night" ? "Light mode" : "Dark mode"}
+        type="button"
+      >{theme === "night" ? "\u2600" : "\u263e"}</button>
       <section className="pos-login-brand">
         <Link href="/" aria-label="ONE TEN home">
           <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
@@ -969,14 +975,14 @@ export default function PosPage() {
   const nav = [["sale", "New Sale", "pos.sell"], ["history", "Receipts", "pos.history"], ["inventory", "Inventory", "inventory.view"], ["orders", "Online Orders", "orders.view"], ["customers", "Customers", "customers.view"], ["reports", "Reports", "reports.view"]].filter(([, , permission]) => permissions.includes(permission));
 
   return <>
-    <Head><title>ONE TEN POS</title><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" /><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content={theme === "night" ? "#111815" : "#f4f7f6"} /></Head>
+    <Head><title>ONE TEN POS</title><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" /><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content={theme === "night" ? "#0d0f12" : "#f4f7f6"} /></Head>
     {!token && !loading && <Login onLogin={login} message={message} settings={data.settings || {}} theme={theme} onToggleTheme={toggleTheme} />}
     {token && <main className={`pos-app pos-theme-${theme}`}>
       <header className="pos-header">
         <Link href="/" className="pos-logo"><img src={assetUrl(data.settings.logo_day || data.settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" /><span>POS</span></Link>
         <nav>{nav.map(([id, label]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>)}</nav>
         {permissions.includes("orders.view") && <PosNotificationCenter data={data} refresh={() => load(true)} onOpenOrder={(orderId) => { setSelectedOnlineOrderId(orderId); setTab("orders"); }} />}
-        <button className="backoffice-theme-toggle" onClick={toggleTheme} type="button">{theme === "night" ? "☀ Light" : "☾ Dark"}</button>
+        <button aria-label={theme === "night" ? "Switch to light mode" : "Switch to dark mode"} className="backoffice-theme-toggle" onClick={toggleTheme} title={theme === "night" ? "Light mode" : "Dark mode"} type="button">{theme === "night" ? "\u2600" : "\u263e"}</button>
         <div className="pos-staff-menu"><span>{data.staff && data.staff.name}<small>{data.staff && data.staff.role}</small></span><button onClick={() => load()} type="button">↻</button><button onClick={logout} type="button">Sign out</button></div>
       </header>
       {message && <div className={`pos-global-alert ${messageType}`}>{message}</div>}
