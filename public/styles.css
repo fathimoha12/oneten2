@@ -12,6 +12,234 @@
   --shadow: 0 12px 34px rgba(8, 8, 8, 0.08);
 }
 
+/* Persistent order notifications shared by customer, POS and admin views. */
+.notification-center {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 80;
+}
+
+.notification-center .notification-bell {
+  align-items: center;
+  background: #f5f5f6;
+  border: 1px solid #dedfe2;
+  border-radius: 12px;
+  color: #16171a;
+  cursor: pointer;
+  display: inline-flex;
+  height: 42px;
+  justify-content: center;
+  min-height: 42px;
+  min-width: 42px;
+  padding: 0;
+  position: relative;
+  width: 42px;
+}
+
+.notification-bell .icon {
+  height: 20px;
+  width: 20px;
+}
+
+.notification-bell > span {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.notification-bell > strong {
+  align-items: center;
+  background: #e2161c;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  display: flex;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 900;
+  height: 19px;
+  justify-content: center;
+  min-width: 19px;
+  padding: 0 3px;
+  position: absolute;
+  right: -7px;
+  top: -7px;
+}
+
+.notification-panel {
+  background: #fff;
+  border: 1px solid #dedfe2;
+  border-radius: 18px;
+  box-shadow: 0 20px 55px rgba(13, 15, 20, .2);
+  color: #16171a;
+  overflow: hidden;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 12px);
+  width: min(390px, calc(100vw - 24px));
+  z-index: 300;
+}
+
+.notification-panel-head {
+  align-items: center;
+  border-bottom: 1px solid #ececef;
+  display: flex;
+  justify-content: space-between;
+  padding: 16px 17px;
+}
+
+.notification-panel-head > div {
+  display: grid;
+  gap: 2px;
+}
+
+.notification-panel-head span {
+  color: #8a8d94;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.notification-panel-head strong {
+  color: #16171a;
+  font-size: 17px;
+}
+
+.notification-center .notification-panel-head button,
+.notification-center .notification-enable {
+  background: transparent;
+  border: 0;
+  color: #d31319;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 850;
+  min-height: auto;
+  padding: 5px;
+}
+
+.notification-center .notification-enable {
+  background: #fff5f5;
+  border-bottom: 1px solid #f5dddd;
+  color: #b51117;
+  display: block;
+  padding: 10px 17px;
+  text-align: left;
+  width: 100%;
+}
+
+.notification-list {
+  max-height: min(430px, 65vh);
+  overflow-y: auto;
+}
+
+.notification-center .notification-item {
+  align-items: flex-start;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid #f0f0f2;
+  border-radius: 0;
+  color: #202126;
+  cursor: pointer;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 8px 1fr;
+  min-height: auto;
+  padding: 14px 17px;
+  text-align: left;
+  width: 100%;
+}
+
+.notification-center .notification-item:hover {
+  background: #f8f8f9;
+}
+
+.notification-center .notification-item.unread {
+  background: #fff7f7;
+}
+
+.notification-dot {
+  background: transparent;
+  border-radius: 50%;
+  height: 7px;
+  margin-top: 6px;
+  width: 7px;
+}
+
+.notification-item.unread .notification-dot {
+  background: #e2161c;
+}
+
+.notification-item > span:last-child {
+  display: grid;
+  gap: 4px;
+}
+
+.notification-item strong {
+  color: #17181b;
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.notification-item small {
+  color: #666b74;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.notification-item em {
+  color: #9a9da4;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.notification-empty {
+  color: #7d8189;
+  font-size: 12px;
+  margin: 0;
+  padding: 30px 18px;
+  text-align: center;
+}
+
+.pos-notification-center .notification-bell {
+  background: #292c32;
+  border-color: #343840;
+  color: #fff;
+}
+
+.pos-notification-center .notification-panel {
+  right: -5px;
+}
+
+.admin-notification-center .notification-panel {
+  right: -48px;
+}
+
+.store.night .customer-notification-center .notification-bell {
+  background: #25272c;
+  border-color: #35383f;
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .notification-panel {
+    left: 12px;
+    position: fixed;
+    right: 12px !important;
+    top: 70px;
+    width: auto;
+  }
+
+  .customer-notification-center .notification-panel {
+    top: 118px;
+  }
+
+  .notification-list {
+    max-height: min(520px, calc(100vh - 190px));
+  }
+}
+
 /* ONE TEN staff access and point-of-sale */
 .staff-admin-layout {
   display: grid;
@@ -199,7 +427,8 @@
   background: #101114;
   color: #fff;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  column-gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   height: 76px;
   left: 0;
   padding: 0 26px;
@@ -301,6 +530,8 @@
 .pos-row-actions { display: flex !important; flex-direction: row; gap: 6px !important; }
 .pos-row-actions button { background: #111317; border: 0; border-radius: 7px; color: #fff; cursor: pointer; font-size: 9px; font-weight: 850; padding: 8px 9px; }
 .pos-row-actions .danger { background: #fff0f0; color: #c51017; }
+.pos-order-status-action select { background: #111317; border: 0; border-radius: 8px; color: #fff; cursor: pointer; font-size: 10px; font-weight: 850; min-height: 34px; padding: 0 9px; }
+.pos-order-status-action select:disabled { cursor: wait; opacity: .65; }
 
 .pos-inventory-grid { display: grid; gap: 8px; }
 .pos-inventory-grid article { align-items: center; background: #fff; border: 1px solid #e3e5e9; border-radius: 12px; display: grid; gap: 14px; grid-template-columns: 52px 1fr 2fr auto; padding: 10px 14px; }
@@ -368,7 +599,7 @@
 @keyframes pos-spin { to { transform: rotate(360deg); } }
 
 @media (max-width: 1120px) {
-  .pos-header { grid-template-columns: auto 1fr; }
+  .pos-header { grid-template-columns: auto minmax(0, 1fr) auto auto; }
   .pos-header nav { grid-column: 1 / -1; background: #101114; justify-content: flex-start; left: 0; overflow-x: auto; padding: 0 16px 10px; position: absolute; right: 0; top: 66px; }
   .pos-app { padding-top: 112px; }
   .pos-header { height: 66px; }

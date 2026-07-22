@@ -149,6 +149,7 @@ const iconPaths = {
   back: ["M15 18l-6-6 6-6"],
   minus: ["M5 12h14"],
   plus: ["M12 5v14", "M5 12h14"],
+  bell: ["M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9", "M10 21h4"],
 };
 
 function Icon({ name }) {
@@ -502,7 +503,7 @@ function App() {
 
   return React.createElement("div", { className: `store ${theme}` },
     React.createElement(TopBar, { customer, logout }),
-    React.createElement(Header, { theme, setTheme, query, setQuery, cartCount, navigate, settings }),
+    React.createElement(Header, { theme, setTheme, query, setQuery, cartCount, customer, navigate, settings }),
     React.createElement(NavBarClean, { active: route.page }),
     notice && React.createElement("div", { className: "notice" }, notice),
     route.page === "home" && React.createElement(HomePage, { ads, products, categories, addToCart, navigate, settings }),
@@ -536,7 +537,7 @@ function TopBar({ customer, logout }) {
   );
 }
 
-function Header({ theme, setTheme, query, setQuery, cartCount, navigate, settings }) {
+function Header({ theme, setTheme, query, setQuery, cartCount, customer, navigate, settings }) {
   const headerLogo = theme === "night"
     ? (settings.logo_night || settings.logo_image || assets.logoWhite)
     : (settings.logo_day || settings.logo_image || assets.logoRed);
@@ -557,7 +558,78 @@ function Header({ theme, setTheme, query, setQuery, cartCount, navigate, setting
     React.createElement("div", { className: "header-info" },
       React.createElement("div", { className: "hotline" }, React.createElement("span", null, "Hotline"), React.createElement("strong", null, settings.hotline || "(+252) 63 000 1010")),
       React.createElement("button", { className: "theme-btn", type: "button", onClick: toggleTheme, "aria-label": theme === "day" ? "Switch to night mode" : "Switch to day mode" }, React.createElement(Icon, { name: theme === "day" ? "sun" : "moon" })),
+      customer && React.createElement(CustomerNotificationCenter, { customer, navigate }),
       React.createElement("a", { className: "mini-action cart", href: "/cart" }, "Cart ", React.createElement("strong", null, cartCount))
+    )
+  );
+}
+
+function notificationDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? String(value || "") : date.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function CustomerNotificationCenter({ customer, navigate }) {
+  const [open, setOpen] = useState(false);
+  const [notifications, setNotifications] = useState([]);
+  const [unread, setUnread] = useState(0);
+
+  function refreshNotifications() {
+    if (!customer) return Promise.resolve();
+    return api("/api/customer/notifications")
+      .then((payload) => {
+        setNotifications(payload.notifications || []);
+        setUnread(Number(payload.unread || 0));
+      })
+      .catch(() => {});
+  }
+
+  useEffect(() => {
+    if (!customer) return undefined;
+    refreshNotifications();
+    const interval = window.setInterval(refreshNotifications, 15000);
+    const onFocus = () => refreshNotifications();
+    const onVisibility = () => { if (document.visibilityState === "visible") refreshNotifications(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [customer && customer.id]);
+
+  useEffect(() => {
+    const latest = notifications.find((notification) => !notification.read_at);
+    if (!latest || !customer) return;
+    const key = `oneTenCustomerLastNotification:${customer.id}`;
+    if (localStorage.getItem(key) === String(latest.id)) return;
+    localStorage.setItem(key, String(latest.id));
+    if ("Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification(latest.title, { body: latest.message, tag: `one-ten-customer-${latest.id}`, icon: "/icons/icon-192.png" });
+    }
+  }, [notifications, customer && customer.id]);
+
+  function markRead(id) {
+    return api("/api/customer/notifications/read", { method: "POST", body: JSON.stringify(id ? { id } : {}) }).then(refreshNotifications);
+  }
+
+  function openNotification(notification) {
+    setOpen(false);
+    markRead(notification.id).finally(() => navigate("order-history"));
+  }
+
+  function enableBrowserNotifications() {
+    if (!("Notification" in window)) return;
+    window.Notification.requestPermission();
+  }
+
+  return React.createElement("div", { className: "notification-center customer-notification-center" },
+    React.createElement("button", { "aria-expanded": open, "aria-label": `${unread} unread order notifications`, className: "notification-bell", onClick: () => setOpen((current) => !current), type: "button" }, React.createElement(Icon, { name: "bell" }), unread > 0 && React.createElement("strong", null, unread > 99 ? "99+" : unread)),
+    open && React.createElement("div", { className: "notification-panel" },
+      React.createElement("div", { className: "notification-panel-head" }, React.createElement("div", null, React.createElement("span", null, "Your orders"), React.createElement("strong", null, "Notifications")), unread > 0 && React.createElement("button", { onClick: () => markRead(), type: "button" }, "Mark all read")),
+      "Notification" in window && window.Notification.permission !== "granted" && React.createElement("button", { className: "notification-enable", onClick: enableBrowserNotifications, type: "button" }, "Enable screen alerts"),
+      React.createElement("div", { className: "notification-list" }, notifications.length ? notifications.map((notification) => React.createElement("button", { className: `notification-item ${notification.read_at ? "" : "unread"}`, key: notification.id, onClick: () => openNotification(notification), type: "button" }, React.createElement("span", { className: "notification-dot" }), React.createElement("span", null, React.createElement("strong", null, notification.title), React.createElement("small", null, notification.message), React.createElement("em", null, notificationDate(notification.created_at))))) : React.createElement("p", { className: "notification-empty" }, "No order notifications yet."))
     )
   );
 }

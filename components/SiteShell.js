@@ -4,7 +4,7 @@ import Script from "next/script";
 import React from "react";
 import { createRoot } from "react-dom/client";
 
-const ASSET_VERSION = "20260721-fixed-viewport-reports-1";
+const ASSET_VERSION = "20260721-order-notifications-1";
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://oneten2.vercel.app").replace(/\/$/, "");
 const BRAND_ICON_URL = `${SITE_URL}/assets/one-ten-app-icon.png`;
 const loaderSeenScript = `

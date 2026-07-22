@@ -15,6 +15,8 @@ const emptyData = {
   reports: {},
   report_orders: [],
   inventory_movements: [],
+  notifications: [],
+  notification_unread: 0,
   settings: {},
 };
 
@@ -418,8 +420,22 @@ function Inventory({ data }) {
   return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Shared online + store stock</span><h2>Live Inventory</h2></div><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search inventory..." /></div><div className="pos-inventory-grid">{products.map((product) => <article key={product.id}><img src={assetUrl(product.image)} alt="" /><div><strong>{product.name}</strong><span>{product.category}</span></div><div className="pos-stock-pills">{(product.product_sizes || []).map((size) => <span key={size.size}>{size.size}<b>{size.stock}</b></span>)}</div><strong className={Number(product.stock) <= 3 ? "low" : ""}>{product.stock} total</strong></article>)}</div></section>;
 }
 
-function OnlineOrders({ data }) {
-  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Website channel</span><h2>Online Orders</h2></div><strong>{(data.online_orders || []).length} recent orders</strong></div><div className="pos-history-list">{(data.online_orders || []).map((order) => <article key={order.id}><div className="pos-history-status"><span className="online">Online</span><small>{order.status}</small></div><div><strong>Order #{order.id}</strong><span>{formatDate(order.created_at)}</span></div><div><strong>{order.customer_name}</strong><span>{order.phone}</span></div><div><strong>{money(order.total)}</strong><span>{order.items || (order.order_items || []).length} lines</span></div></article>)}</div></section>;
+function OnlineOrders({ data, refresh, notify }) {
+  const [busyOrder, setBusyOrder] = useState(null);
+  const canManage = (data.permissions || []).includes("orders.manage");
+
+  function updateStatus(order, status) {
+    setBusyOrder(order.id);
+    staffApi(`/api/staff/orders/${order.id}/status`, { method: "PUT", body: JSON.stringify({ status }) })
+      .then(() => {
+        notify(`Order #${order.id} updated to ${status}. The customer was notified.`, "success");
+        return refresh();
+      })
+      .catch((error) => notify(error.message, "error"))
+      .finally(() => setBusyOrder(null));
+  }
+
+  return <section className="pos-page-panel"><div className="pos-page-heading"><div><span>Website channel</span><h2>Online Orders</h2></div><strong>{(data.online_orders || []).length} recent orders</strong></div><div className="pos-history-list">{(data.online_orders || []).map((order) => <article key={order.id}><div className="pos-history-status"><span className="online">Online</span><small>{order.status}</small></div><div><strong>Order #{order.id}</strong><span>{formatDate(order.created_at)}</span></div><div><strong>{order.customer_name}</strong><span>{order.phone}</span></div><div><strong>{money(order.total)}</strong><span>{order.items || (order.order_items || []).length} lines</span></div>{canManage && <div className="pos-row-actions pos-order-status-action"><select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onChange={(event) => updateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", ...(order.status === "Cancelled" ? ["Cancelled"] : [])].map((status) => <option key={status}>{status}</option>)}</select></div>}</article>)}</div></section>;
 }
 
 function Customers({ data }) {
@@ -557,6 +573,48 @@ function ReportTable({ title, empty, headers, rows }) {
   return <section className="pos-report-table"><h3>{title}</h3>{rows.length ? <div><table><thead><tr>{headers.map((header) => <th key={header}>{header}</th>)}</tr></thead><tbody>{rows.map((row, rowIndex) => <tr key={`${title}-${rowIndex}`}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div> : <p>{empty}</p>}</section>;
 }
 
+function PosNotificationCenter({ data, refresh, onOpenOrders }) {
+  const [open, setOpen] = useState(false);
+  const notifications = useMemo(() => data.notifications || [], [data.notifications]);
+  const unread = Number(data.notification_unread || 0);
+
+  useEffect(() => {
+    const latest = notifications.find((notification) => !notification.read_at);
+    if (!latest || !data.staff || typeof window === "undefined") return;
+    const key = `oneTenStaffLastNotification:${data.staff.id}`;
+    if (localStorage.getItem(key) === String(latest.id)) return;
+    localStorage.setItem(key, String(latest.id));
+    if ("Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification(latest.title, { body: latest.message, tag: `one-ten-staff-${latest.id}`, icon: "/icons/icon-192.png" });
+    }
+  }, [notifications, data.staff]);
+
+  function markRead(id) {
+    return staffApi("/api/staff/notifications/read", { method: "POST", body: JSON.stringify(id ? { id } : {}) }).then(() => refresh());
+  }
+
+  function openNotification(notification) {
+    setOpen(false);
+    markRead(notification.id).finally(onOpenOrders);
+  }
+
+  function enableBrowserNotifications() {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    window.Notification.requestPermission();
+  }
+
+  return <div className="notification-center pos-notification-center">
+    <button className="notification-bell" onClick={() => setOpen((current) => !current)} type="button" aria-label={`${unread} unread order notifications`} aria-expanded={open}>
+      <span aria-hidden="true">🔔</span>{unread > 0 && <strong>{unread > 99 ? "99+" : unread}</strong>}
+    </button>
+    {open && <div className="notification-panel">
+      <div className="notification-panel-head"><div><span>Online orders</span><strong>Notifications</strong></div>{unread > 0 && <button onClick={() => markRead()} type="button">Mark all read</button>}</div>
+      {typeof window !== "undefined" && "Notification" in window && window.Notification.permission !== "granted" && <button className="notification-enable" onClick={enableBrowserNotifications} type="button">Enable screen alerts</button>}
+      <div className="notification-list">{notifications.length ? notifications.map((notification) => <button className={`notification-item ${notification.read_at ? "" : "unread"}`} key={notification.id} onClick={() => openNotification(notification)} type="button"><span className="notification-dot" /><span><strong>{notification.title}</strong><small>{notification.message}</small><em>{formatDate(notification.created_at)}</em></span></button>) : <p className="notification-empty">No online-order notifications yet.</p>}</div>
+    </div>}
+  </div>;
+}
+
 export default function PosPage() {
   const [token, setToken] = useState("");
   const [data, setData] = useState(emptyData);
@@ -634,6 +692,7 @@ export default function PosPage() {
       <header className="pos-header">
         <Link href="/" className="pos-logo"><img src={assetUrl(data.settings.logo_night || data.settings.logo_image || "/assets/logo-white.png")} alt="ONE TEN" /><span>POS</span></Link>
         <nav>{nav.map(([id, label]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>)}</nav>
+        {permissions.includes("orders.view") && <PosNotificationCenter data={data} refresh={() => load(true)} onOpenOrders={() => setTab("orders")} />}
         <div className="pos-staff-menu"><span>{data.staff && data.staff.name}<small>{data.staff && data.staff.role}</small></span><button onClick={() => load()} type="button">↻</button><button onClick={logout} type="button">Sign out</button></div>
       </header>
       {message && <div className={`pos-global-alert ${messageType}`}>{message}</div>}
@@ -641,7 +700,7 @@ export default function PosPage() {
         {tab === "sale" && permissions.includes("pos.sell") && <SaleWorkspace data={data} refresh={() => load(true)} notify={notify} />}
         {tab === "history" && permissions.includes("pos.history") && <History data={data} refresh={() => load(true)} notify={notify} />}
         {tab === "inventory" && permissions.includes("inventory.view") && <Inventory data={data} />}
-        {tab === "orders" && permissions.includes("orders.view") && <OnlineOrders data={data} />}
+        {tab === "orders" && permissions.includes("orders.view") && <OnlineOrders data={data} refresh={() => load(true)} notify={notify} />}
         {tab === "customers" && permissions.includes("customers.view") && <Customers data={data} />}
         {tab === "reports" && permissions.includes("reports.view") && <Reports data={data} />}
         {!nav.length && <div className="pos-empty denied"><h2>No access assigned</h2><p>Ask the administrator to enable at least one POS section.</p></div>}

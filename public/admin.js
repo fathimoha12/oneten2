@@ -219,7 +219,7 @@ function AdminApp() {
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState("dashboard");
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
-  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], customers: [], subscribers: [], staff: [], permission_catalog: [], dashboard: {}, settings: {}, admin: {} });
+  const [data, setData] = useState({ products: [], categories: [], ads: [], orders: [], customers: [], subscribers: [], staff: [], permission_catalog: [], notifications: [], notification_unread: 0, dashboard: {}, settings: {}, admin: {} });
 
   useEffect(() => {
     if (token) refresh();
@@ -231,6 +231,17 @@ function AdminApp() {
         .then((payload) => setData((current) => ({ ...current, settings: payload.settings || {} })))
         .catch(() => {});
     }
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const interval = window.setInterval(() => refresh(), 15000);
+    const onFocus = () => refresh();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
   }, [token]);
 
   function login(event) {
@@ -291,6 +302,7 @@ function AdminApp() {
       React.createElement("div", { className: "admin-top" },
         React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "ONE TEN SQL Admin"), React.createElement("h1", null, tab === "dashboard" ? "Good Morning" : tab.replace("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()))),
         React.createElement("div", { className: "admin-top-search" }, React.createElement("input", { placeholder: "Search anything" })),
+        React.createElement(AdminNotificationCenter, { data, onOpenOrders: () => setTab("orders"), refresh }),
         React.createElement("button", { onClick: refresh, type: "button" }, "Refresh")
       ),
       React.createElement("div", { className: "admin-stats" },
@@ -324,6 +336,46 @@ function AdminApp() {
 
 function Stat({ label, value }) {
   return React.createElement("div", { className: "stat" }, React.createElement("span", null, label), React.createElement("strong", null, value));
+}
+
+function AdminNotificationCenter({ data, refresh, onOpenOrders }) {
+  const [open, setOpen] = useState(false);
+  const notifications = data.notifications || [];
+  const unread = Number(data.notification_unread || 0);
+
+  useEffect(() => {
+    const latest = notifications.find((notification) => !notification.read_at);
+    if (!latest || !data.admin || !data.admin.id) return;
+    const key = `oneTenAdminLastNotification:${data.admin.id}`;
+    if (localStorage.getItem(key) === String(latest.id)) return;
+    localStorage.setItem(key, String(latest.id));
+    if ("Notification" in window && window.Notification.permission === "granted") {
+      new window.Notification(latest.title, { body: latest.message, tag: `one-ten-admin-${latest.id}`, icon: "/icons/icon-192.png" });
+    }
+  }, [notifications, data.admin]);
+
+  function markRead(id) {
+    return adminApi("/api/admin/notifications/read", { method: "POST", body: JSON.stringify(id ? { id } : {}) }).then(() => refresh());
+  }
+
+  function openNotification(notification) {
+    setOpen(false);
+    markRead(notification.id).finally(onOpenOrders);
+  }
+
+  function enableBrowserNotifications() {
+    if (!("Notification" in window)) return;
+    window.Notification.requestPermission();
+  }
+
+  return React.createElement("div", { className: "notification-center admin-notification-center" },
+    React.createElement("button", { "aria-expanded": open, "aria-label": `${unread} unread order notifications`, className: "notification-bell", onClick: () => setOpen((current) => !current), type: "button" }, React.createElement("span", { "aria-hidden": "true" }, "🔔"), unread > 0 && React.createElement("strong", null, unread > 99 ? "99+" : unread)),
+    open && React.createElement("div", { className: "notification-panel" },
+      React.createElement("div", { className: "notification-panel-head" }, React.createElement("div", null, React.createElement("span", null, "Website channel"), React.createElement("strong", null, "New orders")), unread > 0 && React.createElement("button", { onClick: () => markRead(), type: "button" }, "Mark all read")),
+      "Notification" in window && window.Notification.permission !== "granted" && React.createElement("button", { className: "notification-enable", onClick: enableBrowserNotifications, type: "button" }, "Enable screen alerts"),
+      React.createElement("div", { className: "notification-list" }, notifications.length ? notifications.map((notification) => React.createElement("button", { className: `notification-item ${notification.read_at ? "" : "unread"}`, key: notification.id, onClick: () => openNotification(notification), type: "button" }, React.createElement("span", { className: "notification-dot" }), React.createElement("span", null, React.createElement("strong", null, notification.title), React.createElement("small", null, notification.message), React.createElement("em", null, formatAdminDate(notification.created_at))))) : React.createElement("p", { className: "notification-empty" }, "No online-order notifications yet."))
+    )
+  );
 }
 
 function DashboardHome({ data, setTab, onOpenCustomer }) {

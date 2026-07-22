@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const { normalizeSaleItems, passwordMatches, receiptNumber, securePasswordHash, staffPermissions } = require("../server")._test;
+const { customerOrderStatusCopy, normalizeSaleItems, passwordMatches, receiptNumber, securePasswordHash, staffPermissions } = require("../server")._test;
 
 test("POS combines duplicate product and size lines before reserving stock", () => {
   assert.deepEqual(
@@ -11,10 +11,17 @@ test("POS combines duplicate product and size lines before reserving stock", () 
 
 test("staff permissions reject unknown keys and require history for void access", () => {
   assert.deepEqual(staffPermissions(["pos.void", "unknown.permission", "inventory.view"]), ["pos.void", "inventory.view", "pos.history"]);
+  assert.deepEqual(staffPermissions(["orders.manage"]), ["orders.manage", "orders.view"]);
 });
 
 test("POS receipts receive a stable dated sequence", () => {
   assert.equal(receiptNumber(42, "2026-07-20T11:22:00Z"), "POS-20260720-000042");
+});
+
+test("customer order notifications describe the current status", () => {
+  assert.deepEqual(customerOrderStatusCopy(27, "Packed"), ["Order #27 is packed", "Your products are packed and ready for the next step."]);
+  assert.match(customerOrderStatusCopy(27, "Delivered")[0], /completed/);
+  assert.match(customerOrderStatusCopy(27, "Cancelled")[1], /cancelled/i);
 });
 
 test("staff passwords use salted scrypt and preserve legacy admin verification", () => {
