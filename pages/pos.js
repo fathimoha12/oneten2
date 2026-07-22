@@ -121,7 +121,7 @@ function playPosOrderRing() {
   else context.resume().then(schedule).catch(() => {});
 }
 
-function Login({ onLogin, message, settings }) {
+function Login({ onLogin, message, settings, theme, onToggleTheme }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -134,7 +134,8 @@ function Login({ onLogin, message, settings }) {
   }
 
   return (
-    <main className="pos-login-page">
+    <main className={`pos-login-page pos-theme-${theme}`}>
+      <button className="backoffice-theme-toggle pos-login-theme-toggle" onClick={onToggleTheme} type="button">{theme === "night" ? "☀ Light" : "☾ Dark"}</button>
       <section className="pos-login-brand">
         <Link href="/" aria-label="ONE TEN home">
           <img src={assetUrl(settings.logo_night || settings.logo_image || "/assets/logo-white.png")} alt="ONE TEN" />
@@ -150,7 +151,7 @@ function Login({ onLogin, message, settings }) {
       </section>
       <section className="pos-login-panel">
         <form onSubmit={submit}>
-          <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
+          <img src={assetUrl(theme === "night" ? settings.logo_night || settings.logo_image || "/assets/logo-white.png" : settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
           <p className="pos-kicker">Receptionist / Seller</p>
           <h2>Sign in to POS</h2>
           <p>Use the account created for you by the administrator.</p>
@@ -517,7 +518,55 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
   </section>;
 }
 
-function PosOrderItemEditor({ item, disabled, onSave }) {
+function PosOrderedProductView({ item, onClose }) {
+  const baseProduct = { id: item.product_id, name: item.product_name, image: item.product_image, images: [item.product_image].filter(Boolean), price: item.price };
+  const [detail, setDetail] = useState(baseProduct);
+  const [activeImage, setActiveImage] = useState(productImages(baseProduct)[0]);
+  const [loading, setLoading] = useState(Boolean(item.product_id));
+
+  useEffect(() => {
+    let active = true;
+    setDetail(baseProduct);
+    setActiveImage(productImages(baseProduct)[0]);
+    if (!item.product_id) {
+      setLoading(false);
+      return () => { active = false; };
+    }
+    setLoading(true);
+    staffApi(`/api/staff/products/${item.product_id}`)
+      .then((payload) => {
+        if (!active || !payload.product) return;
+        setDetail(payload.product);
+        setActiveImage(productImages(payload.product)[0]);
+      })
+      .catch(() => {})
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  // The selected order line fully identifies the preview request.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, item.product_id]);
+
+  const images = productImages(detail);
+  return <div className="pos-modal-backdrop pos-product-preview-backdrop" onClick={(event) => { event.stopPropagation(); onClose(); }} role="dialog" aria-modal="true" aria-label={`${item.product_name} ordered product details`}>
+    <section className="pos-product-view pos-ordered-product-view" onClick={(event) => event.stopPropagation()}>
+      <button className="pos-product-view-close" onClick={onClose} type="button" aria-label="Close">×</button>
+      <div className="pos-product-view-gallery">
+        <img src={assetUrl(activeImage)} alt={detail.name || item.product_name} />
+        {images.length > 1 && <div>{images.map((image, index) => <button className={image === activeImage ? "active" : ""} key={`${image}-${index}`} onClick={() => setActiveImage(image)} type="button"><img src={assetUrl(image)} alt={`${detail.name || item.product_name} ${index + 1}`} /></button>)}</div>}
+      </div>
+      <div className="pos-product-view-copy">
+        <span>Ordered product</span><h2>{detail.name || item.product_name}</h2>
+        <div className="pos-product-view-price"><strong>{money(item.price)}</strong></div>
+        <div className="pos-ordered-product-facts"><p><span>Ordered size</span><strong>{item.size || "ONE SIZE"}</strong></p><p><span>Ordered quantity</span><strong>{item.requested_qty || item.qty}</strong></p><p><span>Remaining</span><strong>{item.qty}</strong></p><p><span>Status</span><strong>{item.status || "Processing"}</strong></p></div>
+        <p>{detail.description || "This is the exact product line included in the customer order."}</p>
+        {Array.isArray(detail.product_sizes) && detail.product_sizes.length > 0 && <div className="pos-product-view-stock"><strong>{detail.stock} currently available</strong><span>{detail.product_sizes.map((size) => `${size.size}: ${size.stock}`).join(" · ")}</span></div>}
+        {loading && <small className="pos-product-view-loading">Loading full gallery...</small>}
+      </div>
+    </section>
+  </div>;
+}
+
+function PosOrderItemEditor({ item, disabled, onSave, onView }) {
   const requestedQty = Math.max(1, Number(item.requested_qty || item.qty || 1));
   const currentQty = Math.max(0, Number(item.qty || 0));
   const locked = item.status === "Cancelled" || currentQty === 0;
@@ -539,8 +588,8 @@ function PosOrderItemEditor({ item, disabled, onSave }) {
 
   return <article className={`pos-order-item-editor ${locked ? "cancelled" : ""}`}>
     <div className="pos-order-item-summary">
-      <img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" />
-      <div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div>
+      <button className="pos-order-item-image" onClick={() => onView(item)} type="button"><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt={item.product_name} /><span>View</span></button>
+      <div><button className="pos-order-item-name" onClick={() => onView(item)} type="button">{item.product_name}</button><span className="pos-order-size-pill">{item.size ? `Size ${item.size}` : "ONE SIZE"}</span><small>{item.status || "Processing"}</small></div>
       <div><span>{locked ? "Quantity" : "Remaining"}</span><strong>{locked ? 0 : remainingQty}</strong>{requestedQty !== currentQty && <small>Originally {requestedQty}</small>}</div>
       <div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(locked ? 0 : remainingQty))}</strong><small>{money(item.price)} each</small></div>
     </div>
@@ -555,6 +604,7 @@ function PosOrderItemEditor({ item, disabled, onSave }) {
 
 function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateItem, onUpdateStatus }) {
   const items = order.order_items || [];
+  const [previewItem, setPreviewItem] = useState(null);
   const itemGroups = ["Processing", "Approved", "Cancelled"].map((status) => ({ status, items: items.filter((item) => (item.status || "Processing") === status) })).filter((group) => group.items.length);
   const activeQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
   const cancelledQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.requested_qty || item.qty || 0) - Number(item.qty || 0)), 0);
@@ -566,9 +616,10 @@ function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateItem, o
         <div className="pos-order-detail-status"><div><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><strong>{money(order.total)}</strong></div>{canManage && order.status !== "Cancelled" ? <label><span>Update status</span><select disabled={busy} onChange={(event) => onUpdateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", "Cancelled"].map((status) => <option key={status}>{status}</option>)}</select></label> : <small>{canManage ? "Cancelled order" : "View-only access"}</small>}</div>
         <div className="pos-order-detail-metrics"><article><span>Products</span><strong>{activeQuantity}</strong></article><article><span>Product lines</span><strong>{items.length}</strong></article><article><span>Cancelled qty</span><strong>{cancelledQuantity}</strong></article><article><span>Channel</span><strong>Website</strong></article></div>
         <section className="pos-order-customer-card"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer</small><h3>{order.customer_name || "Customer"}</h3><a href={order.phone ? `tel:${String(order.phone).replace(/[^\d+]/g, "")}` : undefined}>{order.phone || "No phone number"}</a><p>{order.address || "No delivery address provided"}</p></div></section>
-        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products separated by status</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-groups">{itemGroups.map((group) => <section className={`pos-order-product-group status-${group.status.toLowerCase()}`} key={group.status}><header><div><span className={`pos-order-status status-${group.status.toLowerCase()}`}>{group.status}</span><strong>{group.items.length} product line{group.items.length === 1 ? "" : "s"}</strong></div><small>{group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity</small></header><div className="pos-order-product-list">{group.items.map((item) => canManage ? <PosOrderItemEditor disabled={busy} item={item} key={item.id} onSave={onUpdateItem} /> : <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>)}</div></section>
+        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products and every ordered size</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-groups">{itemGroups.map((group) => <section className={`pos-order-product-group status-${group.status.toLowerCase()}`} key={group.status}><header><div><span className={`pos-order-status status-${group.status.toLowerCase()}`}>{group.status}</span><strong>{group.items.length} product line{group.items.length === 1 ? "" : "s"}</strong></div><small>{group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity</small></header><div className="pos-order-size-overview">{group.items.map((item, index) => <button key={`${item.id || item.product_id}-${item.size || "one-size"}-${index}`} onClick={() => setPreviewItem(item)} type="button"><span>{item.product_name}</span><strong>{item.size || "ONE SIZE"}</strong><em>×{group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0}</em></button>)}</div><div className="pos-order-product-list">{group.items.map((item, index) => canManage ? <PosOrderItemEditor disabled={busy} item={item} key={`${item.id || item.product_id}-${item.size || "one-size"}-${index}`} onSave={onUpdateItem} onView={setPreviewItem} /> : <article className={item.status === "Cancelled" ? "cancelled" : ""} key={`${item.id || item.product_id}-${item.size || "one-size"}-${index}`}><button className="pos-order-item-image" onClick={() => setPreviewItem(item)} type="button"><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt={item.product_name} /><span>View</span></button><div><button className="pos-order-item-name" onClick={() => setPreviewItem(item)} type="button">{item.product_name}</button><span className="pos-order-size-pill">{item.size ? `Size ${item.size}` : "ONE SIZE"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>)}</div></section>
         <div className="pos-order-detail-total"><div><span>Branch</span><strong>{order.branch || "Online Store"}</strong></div><div><span>Payment</span><strong>{order.payment_status || "Pending"}</strong></div><div className="grand"><span>Order total</span><strong>{money(order.total)}</strong></div></div>
       </div>
+      {previewItem && <PosOrderedProductView item={previewItem} onClose={() => setPreviewItem(null)} />}
     </section>
   </div>;
 }
@@ -842,14 +893,25 @@ export default function PosPage() {
   const [message, setMessage] = useState("");
   const [messageType, setMessageType] = useState("error");
   const [selectedOnlineOrderId, setSelectedOnlineOrderId] = useState(null);
+  const [theme, setTheme] = useState("day");
 
   useEffect(() => {
+    const storedTheme = localStorage.getItem("oneTenTheme");
+    setTheme(storedTheme === "night" || storedTheme === "day" ? storedTheme : window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day");
     const stored = localStorage.getItem("staffToken") || "";
     setToken(stored);
     if (!stored) {
       staffApi("/api/public/bootstrap").then((payload) => setData((current) => ({ ...current, settings: payload.settings || {} }))).catch(() => {}).finally(() => setLoading(false));
     }
   }, []);
+
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === "night" ? "day" : "night";
+      localStorage.setItem("oneTenTheme", next);
+      return next;
+    });
+  }
 
   function notify(text, type = "error") {
     setMessage(text);
@@ -907,13 +969,14 @@ export default function PosPage() {
   const nav = [["sale", "New Sale", "pos.sell"], ["history", "Receipts", "pos.history"], ["inventory", "Inventory", "inventory.view"], ["orders", "Online Orders", "orders.view"], ["customers", "Customers", "customers.view"], ["reports", "Reports", "reports.view"]].filter(([, , permission]) => permissions.includes(permission));
 
   return <>
-    <Head><title>ONE TEN POS</title><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" /><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content="#101114" /></Head>
-    {!token && !loading && <Login onLogin={login} message={message} settings={data.settings || {}} />}
-    {token && <main className="pos-app">
+    <Head><title>ONE TEN POS</title><meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" /><meta name="robots" content="noindex,nofollow" /><meta name="theme-color" content={theme === "night" ? "#111815" : "#f4f7f6"} /></Head>
+    {!token && !loading && <Login onLogin={login} message={message} settings={data.settings || {}} theme={theme} onToggleTheme={toggleTheme} />}
+    {token && <main className={`pos-app pos-theme-${theme}`}>
       <header className="pos-header">
         <Link href="/" className="pos-logo"><img src={assetUrl(data.settings.logo_day || data.settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" /><span>POS</span></Link>
         <nav>{nav.map(([id, label]) => <button className={tab === id ? "active" : ""} key={id} onClick={() => setTab(id)} type="button">{label}</button>)}</nav>
         {permissions.includes("orders.view") && <PosNotificationCenter data={data} refresh={() => load(true)} onOpenOrder={(orderId) => { setSelectedOnlineOrderId(orderId); setTab("orders"); }} />}
+        <button className="backoffice-theme-toggle" onClick={toggleTheme} type="button">{theme === "night" ? "☀ Light" : "☾ Dark"}</button>
         <div className="pos-staff-menu"><span>{data.staff && data.staff.name}<small>{data.staff && data.staff.role}</small></span><button onClick={() => load()} type="button">↻</button><button onClick={logout} type="button">Sign out</button></div>
       </header>
       {message && <div className={`pos-global-alert ${messageType}`}>{message}</div>}

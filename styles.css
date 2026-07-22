@@ -8986,3 +8986,316 @@ textarea {
     gap: 6px;
   }
 }
+
+/* Every ordered size remains a separate visible line and can be opened for a full product preview. */
+.pos-order-product-list {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.pos-order-product-list > article {
+  flex: 0 0 auto;
+  min-height: max-content;
+  position: relative;
+  width: 100%;
+}
+
+.pos-order-size-overview {
+  background: #f8faf9;
+  border-bottom: 1px solid #dfe9e6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  padding: 9px 16px;
+}
+
+.pos-order-size-overview button {
+  align-items: center;
+  background: #fff;
+  border: 1px solid #d7e2de;
+  border-radius: 999px;
+  color: #26332f;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 7px;
+  min-height: 30px;
+  padding: 5px 9px;
+}
+
+.pos-order-size-overview button > span {
+  font-size: 8px;
+  font-weight: 800;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pos-order-size-overview button > strong {
+  background: #e8f0ff;
+  border-radius: 999px;
+  color: #255ca7;
+  font-size: 9px;
+  padding: 4px 7px;
+}
+
+.pos-order-size-overview button > em {
+  color: #e01319;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.pos-order-item-image {
+  background: #edf2f0;
+  border: 0;
+  border-radius: 11px;
+  cursor: zoom-in;
+  height: 58px;
+  overflow: hidden;
+  padding: 0;
+  position: relative;
+  width: 58px;
+}
+
+.pos-order-item-image img {
+  display: block;
+  height: 58px;
+  width: 58px;
+}
+
+.pos-order-item-image > span {
+  background: rgba(12, 18, 16, .78);
+  bottom: 3px;
+  border-radius: 999px;
+  color: #fff !important;
+  font-size: 7px !important;
+  font-weight: 900;
+  left: 50%;
+  padding: 3px 6px;
+  position: absolute;
+  transform: translateX(-50%);
+}
+
+.pos-order-item-name {
+  background: transparent;
+  border: 0;
+  color: #17201d;
+  cursor: zoom-in;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 900;
+  padding: 0;
+  text-align: left;
+  width: max-content;
+}
+
+.pos-order-size-pill {
+  background: #edf3ff;
+  border-radius: 999px;
+  color: #255ca7 !important;
+  font-size: 8px !important;
+  font-weight: 950;
+  padding: 4px 7px;
+  width: max-content;
+}
+
+.pos-product-preview-backdrop {
+  z-index: 720;
+}
+
+.pos-ordered-product-view {
+  max-width: 940px;
+}
+
+.pos-ordered-product-facts {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1fr 1fr;
+  margin: 4px 0 8px;
+}
+
+.pos-ordered-product-facts p {
+  background: #f3f6f5;
+  border: 1px solid #e0e8e5;
+  border-radius: 11px;
+  display: grid;
+  gap: 3px;
+  margin: 0;
+  padding: 10px;
+}
+
+.pos-ordered-product-facts span {
+  color: #78847f;
+  font-size: 8px;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.pos-ordered-product-facts strong {
+  color: #18231f;
+  font-size: 13px;
+}
+
+/* One simple eye-friendly light/dark switch is shared by the store, Admin and POS. */
+.backoffice-theme-toggle {
+  align-items: center;
+  background: #eef2f0;
+  border: 1px solid #d7dfdc;
+  border-radius: 999px;
+  color: #1b2924;
+  cursor: pointer;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 900;
+  justify-content: center;
+  min-height: 36px;
+  padding: 7px 11px;
+  white-space: nowrap;
+}
+
+.pos-login-theme-toggle {
+  position: fixed;
+  right: 20px;
+  top: 20px;
+  z-index: 20;
+}
+
+.admin-login-card .admin-login-theme-toggle {
+  background: #eef2f0;
+  border: 1px solid #d7dfdc;
+  color: #1b2924;
+  justify-self: end;
+  min-height: 34px;
+  width: auto;
+}
+
+.admin-theme-night .admin-login-card .admin-login-theme-toggle {
+  background: #26332e;
+  border-color: #3a4a44;
+  color: #f1f6f4;
+}
+
+.store.night {
+  --paper: #0f1513;
+  --panel: #18201d;
+  --ink: #edf4f1;
+  --muted: #aab8b3;
+  --line: rgba(226, 239, 234, .13);
+  --soft: #202a26;
+  --shadow: 0 16px 42px rgba(0, 0, 0, .3);
+  background: #0f1513;
+  color-scheme: dark;
+}
+
+.store.night :is(.header, .category-nav, .home-copy, .summary, .form-card, .content-page, .cart-item, .history-item, .history-tabs, .search input, .search select, .theme-btn, .hotline) {
+  background: #18201d;
+  border-color: rgba(226, 239, 234, .13);
+  color: #edf4f1;
+}
+
+.pos-theme-night,
+.admin-theme-night {
+  --night-bg: #0f1513;
+  --night-panel: #18201d;
+  --night-panel-soft: #202a26;
+  --night-line: #31403a;
+  --night-text: #edf4f1;
+  --night-muted: #aab8b3;
+  background: var(--night-bg) !important;
+  color: var(--night-text);
+  color-scheme: dark;
+}
+
+.pos-theme-night .backoffice-theme-toggle,
+.admin-theme-night .backoffice-theme-toggle {
+  background: #26332e;
+  border-color: #3a4a44;
+  color: #f1f6f4;
+}
+
+.pos-theme-night :is(.pos-header, .pos-page-heading, .pos-cart-panel, .pos-product-card, .pos-history-list > article, .pos-inventory-grid article, .pos-customer-grid > button, .pos-report-cards article, .pos-report-filters, .pos-report-table, .pos-online-order-card, .pos-order-overview article, .pos-online-order-detail, .pos-order-detail-status, .pos-order-detail-metrics article, .pos-order-customer-card, .pos-order-product-section, .pos-order-detail-total, .pos-customer-detail, .pos-product-view, .notification-panel) {
+  background: var(--night-panel) !important;
+  border-color: var(--night-line) !important;
+  color: var(--night-text) !important;
+}
+
+.pos-theme-night :is(.pos-order-product-list > article, .pos-order-item-editor) {
+  background: var(--night-panel) !important;
+  border-color: var(--night-line) !important;
+  color: var(--night-text) !important;
+}
+
+.pos-theme-night :is(.pos-order-product-group > header, .pos-order-size-overview, .pos-order-item-controls, .pos-order-detail-head, .pos-order-card-footer, .pos-ordered-product-facts p) {
+  background: var(--night-panel-soft) !important;
+  border-color: var(--night-line) !important;
+}
+
+.pos-theme-night :is(input, select, textarea, .pos-order-size-overview button) {
+  background: #111815 !important;
+  border-color: #3a4943 !important;
+  color: var(--night-text) !important;
+}
+
+.pos-theme-night :is(h1, h2, h3, h4, strong, b, .pos-order-item-name, .pos-order-section-title h3, .pos-order-customer-card h3, .pos-order-product-list strong, .pos-ordered-product-facts strong, .notification-panel-head strong) {
+  color: var(--night-text) !important;
+}
+
+.pos-theme-night :is(p, small, .pos-page-heading p, .pos-order-product-list small, .pos-order-product-list span, .pos-order-detail-total span, .pos-order-customer-card p, .pos-ordered-product-facts span) {
+  color: var(--night-muted) !important;
+}
+
+.pos-theme-night .pos-login-panel {
+  background: var(--night-bg);
+}
+
+.pos-theme-night .pos-login-panel form {
+  background: var(--night-panel);
+  border-color: var(--night-line);
+  color: var(--night-text);
+}
+
+.admin-theme-night .admin-main {
+  background: var(--night-bg) !important;
+  color: var(--night-text);
+}
+
+.admin-theme-night :is(.admin-top, .admin-stats .stat, .admin-form, .admin-table, .dashboard-panel, .dashboard-hero-card, .product-form-panel, .product-board, .customer-board, .customer-row, .customer-order-card, .customer-order-items > div, .drawer-section, .drawer-metrics > div, .drawer-size-grid > div, .drawer-details-list > div, .drawer-order-item, .admin-order-product-group, .order-detail-panel, .staff-form, .staff-directory, .notification-panel, .admin-login-card) {
+  background: var(--night-panel) !important;
+  border-color: var(--night-line) !important;
+  color: var(--night-text) !important;
+}
+
+.admin-theme-night :is(.admin-order-product-group > header, .order-status-control, .customer-drawer-hero, .order-customer-summary, .staff-account-row, .recent-list div) {
+  background: var(--night-panel-soft) !important;
+  border-color: var(--night-line) !important;
+}
+
+.admin-theme-night :is(input, select, textarea, .admin-top-search input, .drawer-order-item input, .drawer-order-item select) {
+  background: #111815 !important;
+  border-color: #3a4943 !important;
+  color: var(--night-text) !important;
+}
+
+.admin-theme-night :is(h1, h2, h3, h4, label, strong, b, dd, td, .admin-top h1, .product-form-head h2, .product-board-head h2, .customer-board-head h2, .drawer-section h3, .drawer-order-item-main strong, .notification-panel-head strong) {
+  color: var(--night-text) !important;
+}
+
+.admin-theme-night :is(p, small, dt, .admin-form span, .order-row span, .customer-main span, .customer-main small, .drawer-section p, .drawer-details-list dt, .drawer-order-item-main span, .drawer-order-item-main small) {
+  color: var(--night-muted) !important;
+}
+
+.admin-theme-night.admin-login-page {
+  background: var(--night-bg) !important;
+}
+
+@media (max-width: 760px) {
+  .pos-order-size-overview {
+    padding: 8px 11px;
+  }
+
+  .pos-order-size-overview button > span {
+    max-width: 105px;
+  }
+}

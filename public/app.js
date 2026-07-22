@@ -263,7 +263,11 @@ function LoadingScreen() {
 
 function App() {
   const [route, setRoute] = useState(routeFromLocation);
-  const [theme, setTheme] = useState(localStorage.getItem("oneTenTheme") || "day");
+  const [theme, setTheme] = useState(() => {
+    const stored = localStorage.getItem("oneTenTheme");
+    if (stored === "day" || stored === "night") return stored;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+  });
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [ads, setAds] = useState([]);
@@ -557,7 +561,7 @@ function Header({ theme, setTheme, query, setQuery, cartCount, customer, navigat
     ),
     React.createElement("div", { className: "header-info" },
       React.createElement("div", { className: "hotline" }, React.createElement("span", null, "Hotline"), React.createElement("strong", null, settings.hotline || "(+252) 63 000 1010")),
-      React.createElement("button", { className: "theme-btn", type: "button", onClick: toggleTheme, "aria-label": theme === "day" ? "Switch to night mode" : "Switch to day mode" }, React.createElement(Icon, { name: theme === "day" ? "sun" : "moon" })),
+      React.createElement("button", { className: "theme-btn", type: "button", onClick: toggleTheme, title: theme === "day" ? "Dark mode" : "Light mode", "aria-label": theme === "day" ? "Switch to night mode" : "Switch to day mode" }, React.createElement(Icon, { name: theme === "day" ? "moon" : "sun" })),
       customer && React.createElement(CustomerNotificationCenter, { customer, navigate }),
       React.createElement("a", { className: "mini-action cart", href: "/cart" }, "Cart ", React.createElement("strong", null, cartCount))
     )

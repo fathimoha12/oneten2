@@ -214,6 +214,11 @@ const emptyAd = {
 
 function AdminApp() {
   const [token, setToken] = useState(localStorage.getItem("adminToken") || "");
+  const [theme, setTheme] = useState(() => {
+    const stored = localStorage.getItem("oneTenTheme");
+    if (stored === "day" || stored === "night") return stored;
+    return window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "night" : "day";
+  });
   const [username, setUsername] = useState("onetenadmin");
   const [password, setPassword] = useState("");
   const [message, setMessage] = useState("");
@@ -260,6 +265,14 @@ function AdminApp() {
     setToken("");
   }
 
+  function toggleTheme() {
+    setTheme((current) => {
+      const next = current === "night" ? "day" : "night";
+      localStorage.setItem("oneTenTheme", next);
+      return next;
+    });
+  }
+
   function refresh() {
     adminApi("/api/admin/bootstrap").then(setData).catch((error) => {
       setMessage(error.message);
@@ -274,9 +287,10 @@ function AdminApp() {
   }
 
   if (!token) {
-    return React.createElement("div", { className: "admin-login-page" },
+    return React.createElement("div", { className: `admin-login-page admin-theme-${theme}` },
       React.createElement("form", { className: "admin-login-card", onSubmit: login },
-        React.createElement("img", { src: data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
+        React.createElement("button", { className: "backoffice-theme-toggle admin-login-theme-toggle", onClick: toggleTheme, type: "button" }, theme === "night" ? "☀ Light" : "☾ Dark"),
+        React.createElement("img", { src: theme === "night" ? data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png" : data.settings.logo_day || data.settings.logo_image || "assets/logo-red.png", alt: "ONE TEN" }),
         React.createElement("h1", null, "Admin Login"),
         React.createElement("p", null, "Enter your private admin credentials."),
         message && React.createElement("div", { className: "admin-message" }, message),
@@ -288,7 +302,7 @@ function AdminApp() {
     );
   }
 
-  return React.createElement("div", { className: "admin-shell" },
+  return React.createElement("div", { className: `admin-shell admin-theme-${theme}` },
     React.createElement("aside", { className: "admin-sidebar" },
       React.createElement("img", { src: data.settings.logo_night || data.settings.logo_image || "assets/logo-white.png", alt: "ONE TEN" }),
       [["dashboard", "Dashboard"], ["products", "Products"], ["catalog", "Catalog Tools"], ["categories", "Categories"], ["ads", "Landing Ads"], ["about", "About Us"], ["settings", "Logo/Contact/Footer"], ["staff", "Staff & POS Access"], ["subscribers", "Subscribers"], ["customers", "Customers"], ["orders", "Orders"], ["security", "Security"]].map(([id, label]) =>
@@ -303,6 +317,7 @@ function AdminApp() {
         React.createElement("div", null, React.createElement("p", { className: "eyebrow" }, "ONE TEN SQL Admin"), React.createElement("h1", null, tab === "dashboard" ? "Good Morning" : tab.replace("-", " ").replace(/\b\w/g, (letter) => letter.toUpperCase()))),
         React.createElement("div", { className: "admin-top-search" }, React.createElement("input", { placeholder: "Search anything" })),
         React.createElement(AdminNotificationCenter, { data, onOpenOrders: () => setTab("orders"), refresh }),
+        React.createElement("button", { className: "backoffice-theme-toggle", onClick: toggleTheme, type: "button" }, theme === "night" ? "☀ Light" : "☾ Dark"),
         React.createElement("button", { onClick: refresh, type: "button" }, "Refresh")
       ),
       React.createElement("div", { className: "admin-stats" },

@@ -1007,6 +1007,37 @@ async function handleGet(req, res, pathname) {
     return sendJson(req, res, 200, { staff: publicStaffRecord(access.staff), permission_catalog: STAFF_PERMISSION_CATALOG }, { "Cache-Control": "no-store" });
   }
 
+  const staffProductPreviewMatch = pathname.match(/^\/api\/staff\/products\/(\d+)$/);
+  if (staffProductPreviewMatch) {
+    const access = await requireStaffPermission(req, "orders.view");
+    if (access.error) return sendJson(req, res, access.status, { error: access.error });
+    const result = await query(
+      `SELECT p.*, c.name AS category
+       FROM products p
+       LEFT JOIN categories c ON c.id = p.category_id
+       WHERE p.id = $1`,
+      [Number(staffProductPreviewMatch[1])]
+    );
+    if (!result.rows[0]) return sendJson(req, res, 404, { error: "Product not found" });
+    const product = adminProductRecord(result.rows[0]);
+    return sendJson(req, res, 200, {
+      product: {
+        id: product.id,
+        category: product.category,
+        name: product.name,
+        price: product.price,
+        old_price: product.old_price,
+        badge: product.badge,
+        stock: product.stock,
+        product_sizes: product.product_sizes,
+        image: product.image,
+        images: product.images,
+        description: product.description,
+        active: product.active,
+      },
+    }, { "Cache-Control": "no-store" });
+  }
+
   if (pathname === "/api/staff/notifications") {
     const access = await requireStaffPermission(req, "orders.view");
     if (access.error) return sendJson(req, res, access.status, { error: access.error });
