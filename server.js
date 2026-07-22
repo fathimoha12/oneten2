@@ -1006,6 +1006,24 @@ async function handleGet(req, res, pathname) {
     return sendJson(req, res, 200, { staff: publicStaffRecord(access.staff), permission_catalog: STAFF_PERMISSION_CATALOG }, { "Cache-Control": "no-store" });
   }
 
+  if (pathname === "/api/staff/notifications") {
+    const access = await requireStaffPermission(req, "orders.view");
+    if (access.error) return sendJson(req, res, access.status, { error: access.error });
+    const result = await query(
+      `SELECT n.*,
+              (SELECT COUNT(*)::int FROM notifications unread
+               WHERE unread.recipient_type = 'staff' AND unread.recipient_id = $1 AND unread.read_at IS NULL) AS total_unread
+       FROM notifications n
+       WHERE n.recipient_type = 'staff' AND n.recipient_id = $1
+       ORDER BY n.id DESC
+       LIMIT 60`,
+      [access.staff.id]
+    );
+    const unread = Number(result.rows[0] && result.rows[0].total_unread || 0);
+    const notifications = result.rows.map(({ total_unread, ...notification }) => notification);
+    return sendJson(req, res, 200, { notifications, unread }, { "Cache-Control": "no-store" });
+  }
+
   if (pathname === "/api/staff/bootstrap") {
     const access = await requireStaffPermission(req);
     if (access.error) return sendJson(req, res, access.status, { error: access.error });

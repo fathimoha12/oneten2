@@ -1,7 +1,7 @@
 /* eslint-disable @next/next/no-img-element */
 import Head from "next/head";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 const emptyData = {
   staff: null,
@@ -87,6 +87,40 @@ async function staffApi(path, options = {}) {
   return payload;
 }
 
+let posAudioContext = null;
+
+function unlockPosAudio() {
+  if (typeof window === "undefined") return null;
+  const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+  if (!AudioContextClass) return null;
+  if (!posAudioContext) posAudioContext = new AudioContextClass();
+  if (posAudioContext.state === "suspended") posAudioContext.resume().catch(() => {});
+  return posAudioContext;
+}
+
+function playPosOrderRing() {
+  const context = unlockPosAudio();
+  if (!context) return;
+  const schedule = () => {
+    const startAt = context.currentTime + 0.02;
+    [[0, 880, .24], [.32, 660, .24], [.7, 880, .34]].forEach(([offset, frequency, duration]) => {
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(frequency, startAt + offset);
+      gain.gain.setValueAtTime(0.0001, startAt + offset);
+      gain.gain.exponentialRampToValueAtTime(0.22, startAt + offset + .025);
+      gain.gain.exponentialRampToValueAtTime(0.0001, startAt + offset + duration);
+      oscillator.connect(gain);
+      gain.connect(context.destination);
+      oscillator.start(startAt + offset);
+      oscillator.stop(startAt + offset + duration + .03);
+    });
+  };
+  if (context.state === "running") schedule();
+  else context.resume().then(schedule).catch(() => {});
+}
+
 function Login({ onLogin, message, settings }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -94,6 +128,7 @@ function Login({ onLogin, message, settings }) {
 
   function submit(event) {
     event.preventDefault();
+    unlockPosAudio();
     setBusy(true);
     onLogin(username, password).finally(() => setBusy(false));
   }
@@ -575,12 +610,49 @@ function ReportTable({ title, empty, headers, rows }) {
 
 function PosNotificationCenter({ data, refresh, onOpenOrders }) {
   const [open, setOpen] = useState(false);
-  const notifications = useMemo(() => data.notifications || [], [data.notifications]);
-  const unread = Number(data.notification_unread || 0);
+  const [live, setLive] = useState({ notifications: data.notifications || [], unread: Number(data.notification_unread || 0) });
+  const [incoming, setIncoming] = useState(null);
+  const [silencedId, setSilencedId] = useState("");
+  const ringTimer = useRef(null);
+  const notifications = live.notifications;
+  const unread = live.unread;
+  const incomingId = incoming ? String(incoming.id) : "";
+
+  function loadNotifications() {
+    return staffApi("/api/staff/notifications").then((payload) => {
+      setLive({ notifications: payload.notifications || [], unread: Number(payload.unread || 0) });
+      return payload;
+    });
+  }
 
   useEffect(() => {
-    const latest = notifications.find((notification) => !notification.read_at);
-    if (!latest || !data.staff || typeof window === "undefined") return;
+    setLive({ notifications: data.notifications || [], unread: Number(data.notification_unread || 0) });
+  }, [data.notifications, data.notification_unread]);
+
+  useEffect(() => {
+    let active = true;
+    const poll = () => loadNotifications().catch(() => {});
+    poll();
+    const interval = window.setInterval(() => { if (active) poll(); }, 5000);
+    const onFocus = () => poll();
+    window.addEventListener("focus", onFocus);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      window.removeEventListener("focus", onFocus);
+    };
+  // The lightweight notification poll is tied only to the signed-in staff account.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.staff && data.staff.id]);
+
+  useEffect(() => {
+    const latest = notifications.find((notification) => !notification.read_at && notification.notification_type === "new_online_order");
+    if (!latest || !data.staff || typeof window === "undefined") {
+      setIncoming(null);
+      return;
+    }
+    setIncoming((current) => current && String(current.id) === String(latest.id) ? current : latest);
+    setSilencedId((current) => current === String(latest.id) ? current : "");
     const key = `oneTenStaffLastNotification:${data.staff.id}`;
     if (localStorage.getItem(key) === String(latest.id)) return;
     localStorage.setItem(key, String(latest.id));
@@ -589,13 +661,45 @@ function PosNotificationCenter({ data, refresh, onOpenOrders }) {
     }
   }, [notifications, data.staff]);
 
+  useEffect(() => {
+    const unlock = () => unlockPosAudio();
+    window.addEventListener("pointerdown", unlock);
+    window.addEventListener("keydown", unlock);
+    return () => {
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+    };
+  }, []);
+
+  useEffect(() => {
+    window.clearInterval(ringTimer.current);
+    ringTimer.current = null;
+    if (!incomingId || silencedId === incomingId) return undefined;
+    playPosOrderRing();
+    ringTimer.current = window.setInterval(playPosOrderRing, 2100);
+    return () => {
+      window.clearInterval(ringTimer.current);
+      ringTimer.current = null;
+    };
+  }, [incomingId, silencedId]);
+
   function markRead(id) {
-    return staffApi("/api/staff/notifications/read", { method: "POST", body: JSON.stringify(id ? { id } : {}) }).then(() => refresh());
+    return staffApi("/api/staff/notifications/read", { method: "POST", body: JSON.stringify(id ? { id } : {}) }).then(loadNotifications);
   }
 
   function openNotification(notification) {
     setOpen(false);
-    markRead(notification.id).finally(onOpenOrders);
+    setIncoming(null);
+    window.clearInterval(ringTimer.current);
+    markRead(notification.id).then(() => refresh()).finally(onOpenOrders);
+  }
+
+  function dismissIncoming() {
+    if (!incoming) return;
+    const id = incoming.id;
+    setIncoming(null);
+    window.clearInterval(ringTimer.current);
+    markRead(id).catch(() => {});
   }
 
   function enableBrowserNotifications() {
@@ -604,13 +708,28 @@ function PosNotificationCenter({ data, refresh, onOpenOrders }) {
   }
 
   return <div className="notification-center pos-notification-center">
-    <button className="notification-bell" onClick={() => setOpen((current) => !current)} type="button" aria-label={`${unread} unread order notifications`} aria-expanded={open}>
+    <button className="notification-bell" onClick={() => { unlockPosAudio(); setOpen((current) => !current); }} type="button" aria-label={`${unread} unread order notifications`} aria-expanded={open}>
       <span aria-hidden="true">🔔</span>{unread > 0 && <strong>{unread > 99 ? "99+" : unread}</strong>}
     </button>
     {open && <div className="notification-panel">
       <div className="notification-panel-head"><div><span>Online orders</span><strong>Notifications</strong></div>{unread > 0 && <button onClick={() => markRead()} type="button">Mark all read</button>}</div>
       {typeof window !== "undefined" && "Notification" in window && window.Notification.permission !== "granted" && <button className="notification-enable" onClick={enableBrowserNotifications} type="button">Enable screen alerts</button>}
       <div className="notification-list">{notifications.length ? notifications.map((notification) => <button className={`notification-item ${notification.read_at ? "" : "unread"}`} key={notification.id} onClick={() => openNotification(notification)} type="button"><span className="notification-dot" /><span><strong>{notification.title}</strong><small>{notification.message}</small><em>{formatDate(notification.created_at)}</em></span></button>) : <p className="notification-empty">No online-order notifications yet.</p>}</div>
+    </div>}
+    {incoming && <div className="pos-incoming-call-backdrop" role="alertdialog" aria-modal="true" aria-label={`Incoming ${incoming.title}`}>
+      <section className="pos-incoming-call-card">
+        <button className={`pos-call-sound ${silencedId === incomingId ? "muted" : ""}`} onClick={() => setSilencedId(silencedId === incomingId ? "" : incomingId)} type="button">{silencedId === incomingId ? "🔇 Sound off" : "🔊 Ringing"}</button>
+        <div className="pos-call-pulse" aria-hidden="true"><span>🛍️</span></div>
+        <p>Incoming online order</p>
+        <h2>{incoming.title}</h2>
+        <strong>{incoming.message}</strong>
+        <small>{formatDate(incoming.created_at)}</small>
+        <div className="pos-call-actions">
+          <button className="dismiss" onClick={dismissIncoming} type="button"><span>×</span>Dismiss</button>
+          <button className="answer" onClick={() => openNotification(incoming)} type="button"><span>✓</span>Open Order</button>
+        </div>
+        <em>The alert continues until this order is opened or dismissed.</em>
+      </section>
     </div>}
   </div>;
 }
