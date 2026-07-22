@@ -1297,10 +1297,10 @@ async function handlePostPutDelete(req, res, method, pathname) {
 
   const staffOrderStatusMatch = pathname.match(/^\/api\/staff\/orders\/(\d+)\/status$/);
   if (staffOrderStatusMatch && method === "PUT") {
-    const access = await requireStaffPermission(req, "orders.manage");
+    const access = await requireStaffPermission(req, "orders.view");
     if (access.error) return sendJson(req, res, access.status, { error: access.error });
     const orderId = Number(staffOrderStatusMatch[1]);
-    const status = ["Processing", "Approved", "Packed", "Delivered"].includes(data.status) ? data.status : "Processing";
+    const status = ["Processing", "Approved", "Packed", "Delivered", "Cancelled"].includes(data.status) ? data.status : "Processing";
     return withClient(async (client) => {
       await client.query("BEGIN");
       try {
@@ -1309,7 +1309,28 @@ async function handlePostPutDelete(req, res, method, pathname) {
         if (!order || order.source !== "online") throw Object.assign(new Error("Online order not found"), { status: 404 });
         if (order.status === "Cancelled") throw Object.assign(new Error("A cancelled order cannot be updated"), { status: 409 });
         if (order.status !== status) {
-          await client.query("UPDATE orders SET status = $1 WHERE id = $2", [status, orderId]);
+          if (status === "Cancelled") {
+            const activeItems = await client.query("SELECT * FROM order_items WHERE order_id = $1 AND status != 'Cancelled' FOR UPDATE", [orderId]);
+            for (const item of activeItems.rows) {
+              await addProductSizeStock(client, item.product_id, item.size || "", Number(item.qty || 0));
+              await syncProductVisibility(client, item.product_id);
+              await recordInventoryMovement(client, {
+                product: { id: item.product_id, name: item.product_name },
+                size: item.size || "",
+                quantityDelta: Number(item.qty || 0),
+                movementType: "online_order_cancel",
+                referenceType: "order",
+                referenceId: orderId,
+                performedByType: "staff",
+                performedById: access.staff.id,
+                performedByName: access.staff.name || access.staff.username,
+              });
+            }
+            await client.query("UPDATE order_items SET qty = 0, status = 'Cancelled' WHERE order_id = $1", [orderId]);
+            await client.query("UPDATE orders SET status = 'Cancelled', total = 0 WHERE id = $1", [orderId]);
+          } else {
+            await client.query("UPDATE orders SET status = $1 WHERE id = $2", [status, orderId]);
+          }
           await notifyCustomerOrderStatus(client, order, status);
         }
         await client.query("COMMIT");
@@ -1317,6 +1338,73 @@ async function handlePostPutDelete(req, res, method, pathname) {
       } catch (error) {
         await client.query("ROLLBACK");
         return sendJson(req, res, error.status || 500, { error: error.message || "Order status update failed" });
+      }
+    });
+  }
+
+  const staffOrderItemMatch = pathname.match(/^\/api\/staff\/order-items\/(\d+)$/);
+  if (staffOrderItemMatch && method === "PUT") {
+    const access = await requireStaffPermission(req, "orders.view");
+    if (access.error) return sendJson(req, res, access.status, { error: access.error });
+    const itemId = Number(staffOrderItemMatch[1]);
+    return withClient(async (client) => {
+      await client.query("BEGIN");
+      try {
+        const itemResult = await client.query("SELECT oi.*, o.source AS order_source, o.status AS order_status, o.customer_id FROM order_items oi JOIN orders o ON o.id = oi.order_id WHERE oi.id = $1 FOR UPDATE", [itemId]);
+        const item = itemResult.rows[0];
+        if (!item) throw Object.assign(new Error("Order item not found"), { status: 404 });
+        if (item.order_source !== "online") throw Object.assign(new Error("Only website orders can be edited here."), { status: 409 });
+        if (item.order_status === "Cancelled") throw Object.assign(new Error("A cancelled order cannot be edited because its stock was already restored."), { status: 409 });
+        let newStatus = data.status || item.status || "Processing";
+        if (!["Processing", "Approved", "Cancelled"].includes(newStatus)) newStatus = "Processing";
+        const requestedQty = Math.max(1, Number.parseInt(item.requested_qty || item.qty || 1, 10) || 1);
+        let newQty = Math.min(requestedQty, Math.max(0, Number.parseInt(data.qty !== undefined ? data.qty : item.qty || 0, 10) || 0));
+        if (newStatus === "Cancelled") newQty = 0;
+        const oldReserved = item.status !== "Cancelled" ? Number(item.qty || 0) : 0;
+        const newReserved = newStatus !== "Cancelled" ? newQty : 0;
+        const stockDelta = oldReserved - newReserved;
+        const productResult = await client.query("SELECT stock, name, product_sizes FROM products WHERE id = $1 FOR UPDATE", [item.product_id]);
+        const product = productResult.rows[0];
+        if (!product) throw Object.assign(new Error("Product not found"), { status: 404 });
+        const sizes = productSizes(product);
+        const requestedItemSize = String(item.size || "").trim().toUpperCase();
+        const itemSize = requestedItemSize || (sizes.length === 1 && sizes[0].size === "ONE SIZE" ? "ONE SIZE" : "");
+        if (sizes.length && itemSize) {
+          const sizeRow = sizes.find((row) => row.size === itemSize);
+          if (stockDelta >= 0) {
+            await addProductSizeStock(client, item.product_id, itemSize, stockDelta);
+          } else {
+            const needed = Math.abs(stockDelta);
+            if (!sizeRow || Number(sizeRow.stock || 0) < needed) throw Object.assign(new Error(`Only ${Number(sizeRow && sizeRow.stock || 0)} left for ${product.name} size ${itemSize}`), { status: 409 });
+            sizeRow.stock = Number(sizeRow.stock || 0) - needed;
+            await client.query("UPDATE products SET stock = $1, product_sizes = $2::jsonb WHERE id = $3", [productTotalStock(sizes), JSON.stringify(sizes), item.product_id]);
+          }
+        } else {
+          const newStock = Number(product.stock || 0) + stockDelta;
+          if (newStock < 0) throw Object.assign(new Error(`Not enough stock for ${product.name}`), { status: 409 });
+          await client.query("UPDATE products SET stock = $1 WHERE id = $2", [newStock, item.product_id]);
+        }
+        await syncProductVisibility(client, item.product_id);
+        if (stockDelta) {
+          await recordInventoryMovement(client, {
+            product: { id: item.product_id, name: product.name },
+            size: itemSize,
+            quantityDelta: stockDelta,
+            movementType: "online_order_adjustment",
+            referenceId: item.order_id,
+            performedByType: "staff",
+            performedById: access.staff.id,
+            performedByName: access.staff.name || access.staff.username,
+          });
+        }
+        await client.query("UPDATE order_items SET qty = $1, status = $2 WHERE id = $3", [newQty, newStatus, itemId]);
+        await recalcOrder(client, item.order_id);
+        await notifyCustomerOrderItemChange(client, item, newQty, newStatus);
+        await client.query("COMMIT");
+        return sendJson(req, res, 200, { ok: true });
+      } catch (error) {
+        await client.query("ROLLBACK");
+        return sendJson(req, res, error.status || 500, { error: error.message || "Order item update failed" });
       }
     });
   }

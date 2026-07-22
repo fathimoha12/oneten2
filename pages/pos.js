@@ -458,7 +458,7 @@ function Inventory({ data }) {
 function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder }) {
   const [busyOrder, setBusyOrder] = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
-  const canManage = (data.permissions || []).includes("orders.manage");
+  const canManage = (data.permissions || []).includes("orders.view");
   const orders = data.online_orders || [];
   const statusOptions = ["All", "Processing", "Approved", "Packed", "Delivered", "Cancelled"];
   const filteredOrders = statusFilter === "All" ? orders : orders.filter((order) => order.status === statusFilter);
@@ -468,6 +468,7 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
   const deliveredCount = orders.filter((order) => order.status === "Delivered").length;
 
   function updateStatus(order, status) {
+    if (status === "Cancelled" && !window.confirm(`Cancel every product in order #${order.id}? Stock will be restored and the customer will be notified.`)) return Promise.resolve();
     setBusyOrder(order.id);
     return staffApi(`/api/staff/orders/${order.id}/status`, { method: "PUT", body: JSON.stringify({ status }) })
       .then(() => {
@@ -475,6 +476,22 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
         return refresh();
       })
       .catch((error) => notify(error.message, "error"))
+      .finally(() => setBusyOrder(null));
+  }
+
+  function updateItem(item, changes) {
+    setBusyOrder(item.order_id);
+    return staffApi(`/api/staff/order-items/${item.id}`, {
+      method: "PUT",
+      body: JSON.stringify({ qty: item.qty, status: item.status || "Processing", ...changes }),
+    })
+      .then(() => {
+        notify(`Order #${item.order_id} product updated. Stock and customer notification were synced.`, "success");
+        return refresh();
+      })
+      .catch((error) => {
+        notify(error.message, "error");
+      })
       .finally(() => setBusyOrder(null));
   }
 
@@ -489,15 +506,51 @@ function OnlineOrders({ data, refresh, notify, selectedOrderId, onSelectOrder })
         <div className="pos-order-card-id"><div><span>Online order</span><strong>#{order.id}</strong></div><b>{money(order.total)}</b></div>
         <div className="pos-order-card-customer"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><strong>{order.customer_name || "Customer"}</strong><small>{order.phone || "No phone number"}</small></div></div>
         <div className="pos-order-card-meta"><span><b>{itemQuantity}</b> products</span><span><b>{order.items || (order.order_items || []).length}</b> lines</span><span>{order.branch || "Online Store"}</span></div>
-        <div className="pos-order-card-footer">{canManage ? <select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onClick={(event) => event.stopPropagation()} onChange={(event) => { event.stopPropagation(); updateStatus(order, event.target.value); }} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", ...(order.status === "Cancelled" ? ["Cancelled"] : [])].map((status) => <option key={status}>{status}</option>)}</select> : <span>View only</span>}<b>Open details →</b></div>
+        <div className="pos-order-card-footer">{canManage ? <select aria-label={`Update order ${order.id} status`} disabled={busyOrder === order.id || order.status === "Cancelled"} onClick={(event) => event.stopPropagation()} onChange={(event) => { event.stopPropagation(); updateStatus(order, event.target.value); }} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", "Cancelled"].map((status) => <option key={status}>{status}</option>)}</select> : <span>View only</span>}<b>Open details →</b></div>
       </article>;
     })}</div>
     {!filteredOrders.length && <div className="pos-empty"><h3>{orders.length ? `No ${statusFilter.toLowerCase()} orders` : "No online orders yet"}</h3><p>{orders.length ? "Choose another status to see its orders." : "New website orders will appear here automatically."}</p></div>}
-    {selectedOrder && <PosOnlineOrderDetail order={selectedOrder} canManage={canManage} busy={busyOrder === selectedOrder.id} onClose={() => onSelectOrder(null)} onUpdateStatus={updateStatus} />}
+    {selectedOrder && <PosOnlineOrderDetail order={selectedOrder} canManage={canManage} busy={busyOrder === selectedOrder.id} onClose={() => onSelectOrder(null)} onUpdateItem={updateItem} onUpdateStatus={updateStatus} />}
   </section>;
 }
 
-function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateStatus }) {
+function PosOrderItemEditor({ item, disabled, onSave }) {
+  const requestedQty = Math.max(1, Number(item.requested_qty || item.qty || 1));
+  const currentQty = Math.max(0, Number(item.qty || 0));
+  const locked = item.status === "Cancelled" || currentQty === 0;
+  const [cancelQty, setCancelQty] = useState(0);
+  const [status, setStatus] = useState(item.status === "Approved" ? "Approved" : "Processing");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setCancelQty(0);
+    setStatus(item.status === "Approved" ? "Approved" : "Processing");
+  }, [item.id, item.qty, item.status]);
+
+  const remainingQty = Math.max(0, currentQty - Math.min(currentQty, Math.max(0, Number(cancelQty || 0))));
+
+  function save(changes) {
+    setSaving(true);
+    return onSave(item, changes).finally(() => setSaving(false));
+  }
+
+  return <article className={`pos-order-item-editor ${locked ? "cancelled" : ""}`}>
+    <div className="pos-order-item-summary">
+      <img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" />
+      <div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div>
+      <div><span>{locked ? "Quantity" : "Remaining"}</span><strong>{locked ? 0 : remainingQty}</strong>{requestedQty !== currentQty && <small>Originally {requestedQty}</small>}</div>
+      <div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(locked ? 0 : remainingQty))}</strong><small>{money(item.price)} each</small></div>
+    </div>
+    {!locked && <div className="pos-order-item-controls">
+      <label><span>Cancel quantity</span><input disabled={disabled || saving} max={currentQty} min="0" onChange={(event) => setCancelQty(Math.min(currentQty, Math.max(0, Number(event.target.value || 0))))} type="number" value={cancelQty} /></label>
+      <label><span>Remaining status</span><select disabled={disabled || saving} onChange={(event) => setStatus(event.target.value)} value={status}><option>Processing</option><option>Approved</option></select></label>
+      <button disabled={disabled || saving} onClick={() => save({ qty: remainingQty, status: remainingQty === 0 ? "Cancelled" : status })} type="button">{saving ? "Saving..." : "Save changes"}</button>
+      <button className="danger" disabled={disabled || saving} onClick={() => save({ qty: 0, status: "Cancelled" })} type="button">Cancel product</button>
+    </div>}
+  </article>;
+}
+
+function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateItem, onUpdateStatus }) {
   const items = order.order_items || [];
   const itemGroups = ["Processing", "Approved", "Cancelled"].map((status) => ({ status, items: items.filter((item) => (item.status || "Processing") === status) })).filter((group) => group.items.length);
   const activeQuantity = items.reduce((sum, item) => sum + Math.max(0, Number(item.qty || 0)), 0);
@@ -507,10 +560,10 @@ function PosOnlineOrderDetail({ order, canManage, busy, onClose, onUpdateStatus 
     <section className="pos-online-order-detail" onClick={(event) => event.stopPropagation()}>
       <header className="pos-order-detail-head"><div><span>Website order</span><h2>Order #{order.id}</h2><small>{formatDate(order.created_at)}</small></div><button onClick={onClose} type="button" aria-label="Close order details">×</button></header>
       <div className="pos-order-detail-scroll">
-        <div className="pos-order-detail-status"><div><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><strong>{money(order.total)}</strong></div>{canManage && order.status !== "Cancelled" ? <label><span>Update status</span><select disabled={busy} onChange={(event) => onUpdateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered"].map((status) => <option key={status}>{status}</option>)}</select></label> : <small>{canManage ? "Cancelled order" : "View-only access"}</small>}</div>
+        <div className="pos-order-detail-status"><div><span className={`pos-order-status status-${String(order.status || "processing").toLowerCase()}`}>{order.status || "Processing"}</span><strong>{money(order.total)}</strong></div>{canManage && order.status !== "Cancelled" ? <label><span>Update status</span><select disabled={busy} onChange={(event) => onUpdateStatus(order, event.target.value)} value={order.status}>{["Processing", "Approved", "Packed", "Delivered", "Cancelled"].map((status) => <option key={status}>{status}</option>)}</select></label> : <small>{canManage ? "Cancelled order" : "View-only access"}</small>}</div>
         <div className="pos-order-detail-metrics"><article><span>Products</span><strong>{activeQuantity}</strong></article><article><span>Product lines</span><strong>{items.length}</strong></article><article><span>Cancelled qty</span><strong>{cancelledQuantity}</strong></article><article><span>Channel</span><strong>Website</strong></article></div>
         <section className="pos-order-customer-card"><span>{String(order.customer_name || "C").slice(0, 1).toUpperCase()}</span><div><small>Customer</small><h3>{order.customer_name || "Customer"}</h3><a href={order.phone ? `tel:${String(order.phone).replace(/[^\d+]/g, "")}` : undefined}>{order.phone || "No phone number"}</a><p>{order.address || "No delivery address provided"}</p></div></section>
-        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products separated by status</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-groups">{itemGroups.map((group) => <section className={`pos-order-product-group status-${group.status.toLowerCase()}`} key={group.status}><header><div><span className={`pos-order-status status-${group.status.toLowerCase()}`}>{group.status}</span><strong>{group.items.length} product line{group.items.length === 1 ? "" : "s"}</strong></div><small>{group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity</small></header><div className="pos-order-product-list">{group.items.map((item) => <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>)}</div></section>
+        <section className="pos-order-product-section"><div className="pos-order-section-title"><div><span>Order contents</span><h3>Products separated by status</h3></div><strong>{items.length} lines</strong></div><div className="pos-order-product-groups">{itemGroups.map((group) => <section className={`pos-order-product-group status-${group.status.toLowerCase()}`} key={group.status}><header><div><span className={`pos-order-status status-${group.status.toLowerCase()}`}>{group.status}</span><strong>{group.items.length} product line{group.items.length === 1 ? "" : "s"}</strong></div><small>{group.items.reduce((sum, item) => sum + Number(group.status === "Cancelled" ? item.requested_qty || 0 : item.qty || 0), 0)} quantity</small></header><div className="pos-order-product-list">{group.items.map((item) => canManage ? <PosOrderItemEditor disabled={busy} item={item} key={item.id} onSave={onUpdateItem} /> : <article className={item.status === "Cancelled" ? "cancelled" : ""} key={item.id}><img src={assetUrl(item.product_image || "/assets/ai-products.png")} alt="" /><div><strong>{item.product_name}</strong><span>{item.size ? `Size ${item.size}` : "No size"}</span><small>{item.status || "Processing"}</small></div><div><span>Quantity</span><strong>{item.qty}</strong>{Number(item.requested_qty || item.qty) !== Number(item.qty) && <small>Originally {item.requested_qty}</small>}</div><div><span>Line total</span><strong>{money(Number(item.price || 0) * Number(item.qty || 0))}</strong><small>{money(item.price)} each</small></div></article>)}</div></section>)}</div></section>
         <div className="pos-order-detail-total"><div><span>Branch</span><strong>{order.branch || "Online Store"}</strong></div><div><span>Payment</span><strong>{order.payment_status || "Pending"}</strong></div><div className="grand"><span>Order total</span><strong>{money(order.total)}</strong></div></div>
       </div>
     </section>
