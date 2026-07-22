@@ -359,6 +359,7 @@ async function ensureRuntimeSchema() {
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS discount numeric(10,2) DEFAULT 0");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS amount_paid numeric(10,2) DEFAULT 0");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS change_due numeric(10,2) DEFAULT 0");
+  await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS cargo text DEFAULT ''");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS notes text DEFAULT ''");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS voided_at text");
   await query("ALTER TABLE orders ADD COLUMN IF NOT EXISTS voided_by bigint REFERENCES staff_users(id) ON DELETE SET NULL");
@@ -1483,14 +1484,16 @@ async function handlePostPutDelete(req, res, method, pathname) {
         }
         const inserted = await client.query(
           `INSERT INTO orders
-           (customer_id, staff_id, customer_name, phone, address, status, source, sales_channel, branch, payment_method, payment_status, subtotal, discount, amount_paid, change_due, notes, total, created_at)
-           VALUES ($1, $2, $3, $4, '', 'Delivered', 'pos', $5, $6, $7, 'Paid', $8, $9, $10, $11, $12, $13, $14)
+           (customer_id, staff_id, customer_name, phone, address, cargo, status, source, sales_channel, branch, payment_method, payment_status, subtotal, discount, amount_paid, change_due, notes, total, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, 'Delivered', 'pos', $7, $8, $9, 'Paid', $10, $11, $12, $13, $14, $15, $16)
            RETURNING id`,
           [
             linkedCustomer && linkedCustomer.id,
             access.staff.id,
             cleanText(linkedCustomer && linkedCustomer.name || data.customer_name || "Walk-in Customer", 120) || "Walk-in Customer",
             cleanText(data.phone, 80),
+            cleanText(data.address, 300),
+            cleanText(data.cargo, 160),
             salesChannel,
             branch,
             paymentMethod,

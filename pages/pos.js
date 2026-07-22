@@ -246,6 +246,11 @@ function ProductQuickView({ product, onAdd, onClose }) {
 function Receipt({ sale, settings, onClose }) {
   if (!sale) return null;
   const visibleQty = (item) => Number(item.qty || item.requested_qty || 0);
+  const items = sale.order_items || [];
+  const receiptRows = [...items, ...Array(Math.max(0, 5 - items.length)).fill(null)];
+  const receiptDate = new Date(sale.created_at);
+  const primaryPhone = settings.receipt_phone_primary || "+252638764334";
+  const secondaryPhone = settings.receipt_phone_secondary || "+252638764335";
   return (
     <div className="pos-modal-backdrop" role="dialog" aria-modal="true" aria-label="Sale receipt">
       <div className="pos-receipt-modal">
@@ -253,37 +258,31 @@ function Receipt({ sale, settings, onClose }) {
           <button onClick={() => window.print()} type="button">Print Receipt</button>
           <button className="secondary" onClick={onClose} type="button">Close</button>
         </div>
-        <article className="print-receipt">
-          <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
-          <h2>ONE TEN</h2>
-          <p>{settings.location || "Hargaysa"} · {settings.phone || ""}</p>
-          <div className="receipt-rule" />
-          <dl>
-            <div><dt>Receipt</dt><dd>{sale.receipt_number}</dd></div>
-            <div><dt>Date</dt><dd>{formatDate(sale.created_at)}</dd></div>
-            <div><dt>Cashier</dt><dd>{sale.staff_name || "Staff"}</dd></div>
-            <div><dt>Customer</dt><dd>{sale.customer_name || "Walk-in Customer"}</dd></div>
-            <div><dt>Channel</dt><dd>{salesChannelLabel(salesChannel(sale))}</dd></div>
-            <div><dt>Branch</dt><dd>{sale.branch || (sale.source === "pos" ? "Main Branch" : "Online Store")}</dd></div>
-          </dl>
-          <div className="receipt-rule" />
-          <div className="receipt-lines">
-            {(sale.order_items || []).map((item) => (
-              <div key={item.id || `${item.product_id}-${item.size}`}>
-                <span>{item.product_name}{item.size ? ` / ${item.size}` : ""}<small>{visibleQty(item)} × {money(item.price)}</small></span>
-                <strong>{money(Number(item.price) * visibleQty(item))}</strong>
-              </div>
-            ))}
-          </div>
-          <div className="receipt-rule" />
-          <dl className="receipt-totals">
-            <div><dt>Subtotal</dt><dd>{money(sale.subtotal)}</dd></div>
-            {Number(sale.discount) > 0 && <div><dt>Discount</dt><dd>-{money(sale.discount)}</dd></div>}
-            <div className="grand"><dt>Total</dt><dd>{money(sale.total)}</dd></div>
-            <div><dt>Paid · {sale.payment_method}</dt><dd>{money(sale.amount_paid)}</dd></div>
-            <div><dt>Change</dt><dd>{money(sale.change_due)}</dd></div>
-          </dl>
-          <p className="receipt-thanks">Thank you for shopping at ONE TEN.</p>
+        <article className="print-receipt delivery-receipt">
+          <header className="receipt-brand-head">
+            <img src={assetUrl(settings.logo_day || settings.logo_image || "/assets/logo-red.png")} alt="ONE TEN" />
+            <div className="receipt-fast-delivery"><i aria-hidden="true">≡●</i><strong>FAST<br />DELIVERY</strong><b aria-hidden="true">➤</b></div>
+          </header>
+          <div className="receipt-solid-rule" />
+          <section className="receipt-customer-details">
+            <div><span aria-hidden="true">▣</span><strong>DATE:</strong><p>{Number.isNaN(receiptDate.getTime()) ? "—" : receiptDate.toLocaleDateString()}</p></div>
+            <div><span aria-hidden="true">●</span><strong>NAME:</strong><p>{sale.customer_name || "Walk-in Customer"}</p></div>
+            <div><span aria-hidden="true">☎</span><strong>PHONE:</strong><p>{sale.phone || "—"}</p></div>
+            <div className="receipt-location-row"><span aria-hidden="true">◆</span><strong>LOCATION:</strong><p>{sale.address || settings.location || "—"}</p><strong>CARGO:</strong><p>{sale.cargo || "—"}</p></div>
+          </section>
+          <table className="receipt-product-table">
+            <thead><tr><th>NO.</th><th>DESCRIPTION</th><th>QTY</th></tr></thead>
+            <tbody>{receiptRows.map((item, index) => <tr key={item ? item.id || `${item.product_id}-${item.size}-${index}` : `blank-${index}`}><td>{index + 1}</td><td>{item ? <><strong>{item.product_name}</strong>{item.size && <small>Size {item.size} · {money(item.price)} each</small>}</> : ""}</td><td>{item ? visibleQty(item) : ""}</td></tr>)}</tbody>
+          </table>
+          <section className="receipt-sale-summary">
+            <div className="receipt-sale-meta"><p><span>Receipt</span><strong>{sale.receipt_number || `#${sale.id}`}</strong></p><p><span>Cashier</span><strong>{sale.staff_name || "Staff"}</strong></p><p><span>Branch</span><strong>{sale.branch || "Main Branch"}</strong></p><p><span>Payment</span><strong>{sale.payment_method || "Cash"}</strong></p></div>
+            <div className="receipt-money-summary"><p><span>Subtotal</span><strong>{money(sale.subtotal)}</strong></p>{Number(sale.discount) > 0 && <p><span>Discount</span><strong>-{money(sale.discount)}</strong></p>}<p className="grand"><span>Total</span><strong>{money(sale.total)}</strong></p><p><span>Paid</span><strong>{money(sale.amount_paid)}</strong></p><p><span>Change</span><strong>{money(sale.change_due)}</strong></p></div>
+          </section>
+          <footer className="receipt-contact-footer">
+            <div><p><span>f</span><strong>{settings.facebook_handle || "ONE TEN"}</strong></p><p><span>♪</span><strong>{settings.tiktok_handle || "ONETENBRAND"}</strong></p></div>
+            <div><p><span>☎</span><strong>{primaryPhone}</strong></p><p><span>☎</span><strong>{secondaryPhone}</strong></p></div>
+            <em>Thank You!</em>
+          </footer>
           {sale.status === "Cancelled" && <strong className="receipt-void">VOIDED</strong>}
         </article>
       </div>
@@ -295,7 +294,7 @@ function SaleWorkspace({ data, refresh, notify }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [cart, setCart] = useState([]);
-  const [customer, setCustomer] = useState({ id: "", name: "", phone: "", branch: "", sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+  const [customer, setCustomer] = useState({ id: "", name: "", phone: "", address: "", cargo: "", branch: "", sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
   const [busy, setBusy] = useState(false);
   const [receipt, setReceipt] = useState(null);
   const [viewProduct, setViewProduct] = useState(null);
@@ -352,6 +351,8 @@ function SaleWorkspace({ data, refresh, notify }) {
         customer_id: customer.id || null,
         customer_name: customer.name || "Walk-in Customer",
         phone: customer.phone,
+        address: customer.address,
+        cargo: customer.cargo,
         branch: customer.branch || branches[0],
         sales_channel: customer.sales_channel,
         payment_method: customer.payment_method,
@@ -362,7 +363,7 @@ function SaleWorkspace({ data, refresh, notify }) {
     }).then((payload) => {
       setReceipt(payload.sale);
       setCart([]);
-      setCustomer({ id: "", name: "", phone: "", branch: branches[0], sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
+      setCustomer({ id: "", name: "", phone: "", address: "", cargo: "", branch: branches[0], sales_channel: "store", payment_method: "Cash", discount: "0", amount_paid: "", notes: "" });
       notify(`${payload.sale.receipt_number} completed. Stock is now synced.`, "success");
       return refresh();
     }).catch((error) => notify(error.message, "error")).finally(() => setBusy(false));
@@ -400,10 +401,12 @@ function SaleWorkspace({ data, refresh, notify }) {
           <div className="pos-sale-context"><label><span>Sales channel</span><select value={customer.sales_channel} onChange={(event) => setCustomer({ ...customer, sales_channel: event.target.value })}><option value="store">In-store / customer visited</option><option value="external_online">Online outside website</option></select></label><label><span>Branch</span><select value={customer.branch || branches[0]} onChange={(event) => setCustomer({ ...customer, branch: event.target.value })}>{branches.map((branch) => <option key={branch}>{branch}</option>)}</select></label></div>
           {(data.customers || []).length > 0 && <select className="pos-customer-select" value={customer.id} onChange={(event) => {
             const linked = (data.customers || []).find((item) => String(item.id) === String(event.target.value));
-            setCustomer({ ...customer, id: event.target.value, name: linked ? linked.name : "", phone: linked && linked.phone || "" });
+            setCustomer({ ...customer, id: event.target.value, name: linked ? linked.name : "", phone: linked && linked.phone || "", address: linked && linked.address || "" });
           }}><option value="">Walk-in / unregistered customer</option>{(data.customers || []).map((item) => <option key={item.id} value={item.id}>{item.name} · {item.email}</option>)}</select>}
           <input value={customer.name} onChange={(event) => setCustomer({ ...customer, id: "", name: event.target.value })} placeholder="Customer name (optional)" />
           <input value={customer.phone} onChange={(event) => setCustomer({ ...customer, phone: event.target.value })} placeholder="Phone (optional)" />
+          <input value={customer.address} onChange={(event) => setCustomer({ ...customer, address: event.target.value })} placeholder="Location / delivery address (optional)" />
+          <input value={customer.cargo} onChange={(event) => setCustomer({ ...customer, cargo: event.target.value })} placeholder="Cargo / delivery information (optional)" />
           <div><select value={customer.payment_method} onChange={(event) => setCustomer({ ...customer, payment_method: event.target.value })}>{["Cash", "ZAAD", "eDahab", "Card", "Other"].map((method) => <option key={method}>{method}</option>)}</select><input min="0" step="0.01" type="number" value={customer.discount} onChange={(event) => setCustomer({ ...customer, discount: event.target.value })} placeholder="Discount" /></div>
           <input min="0" step="0.01" type="number" value={customer.amount_paid} onChange={(event) => setCustomer({ ...customer, amount_paid: event.target.value })} placeholder={`Amount paid · ${money(total)}`} />
           <textarea value={customer.notes} onChange={(event) => setCustomer({ ...customer, notes: event.target.value })} placeholder="Sale note (optional)" />

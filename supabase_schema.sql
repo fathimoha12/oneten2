@@ -93,6 +93,7 @@ create table if not exists orders (
   customer_name text not null,
   phone text not null,
   address text default '',
+  cargo text default '',
   status text default 'Processing',
   source text default 'online',
   sales_channel text default 'website',
@@ -186,6 +187,7 @@ alter table orders add column if not exists subtotal numeric(10,2) default 0;
 alter table orders add column if not exists discount numeric(10,2) default 0;
 alter table orders add column if not exists amount_paid numeric(10,2) default 0;
 alter table orders add column if not exists change_due numeric(10,2) default 0;
+alter table orders add column if not exists cargo text default '';
 alter table orders add column if not exists notes text default '';
 alter table orders add column if not exists voided_at text;
 alter table orders add column if not exists voided_by bigint references staff_users(id) on delete set null;
@@ -219,6 +221,10 @@ insert into settings (key, value) values
   ('phone', '+252 63 000 1010'),
   ('hotline', '(+252) 63 000 1010'),
   ('whatsapp_number', '0633454984'),
+  ('receipt_phone_primary', '+252638764334'),
+  ('receipt_phone_secondary', '+252638764335'),
+  ('facebook_handle', 'ONE TEN'),
+  ('tiktok_handle', 'ONETENBRAND'),
   ('email', 'support@oneten.shop'),
   ('location', 'Hargaysa'),
   ('branches', '["Main Branch"]'),
